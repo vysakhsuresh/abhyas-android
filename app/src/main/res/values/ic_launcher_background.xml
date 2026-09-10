@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Lifted slightly from the app's own #17122B so the icon keeps an edge against a dark
+         wallpaper, the same trick Deja's icon uses. -->
+    <color name="ic_launcher_background">#1F1836</color>
+</resources>

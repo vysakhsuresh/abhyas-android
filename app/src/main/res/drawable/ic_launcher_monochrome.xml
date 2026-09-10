@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The monochrome layer for Android 13+ themed icons. Same glyph as the foreground; the
+  system supplies the colour, so the fill here is a placeholder.
+
+  This is the real glyph outline from Noto Sans Devanagari Bold, converted to viewport
+  coordinates - not a hand-drawn approximation. That matters: the audience reads Devanagari, and
+  a letterform that is subtly wrong is worse than no letter at all.
+
+  Scaled so the whole glyph sits inside the 66dp safe zone of the 108dp canvas. It was drawn
+  larger first, and a circular launcher mask clipped the shirorekha and the right-hand stem.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M75.80,41.07L75.80,75.07L66.53,75.07L66.53,41.07L62.33,41.07L62.33,33.60L82.00,33.60L82.00,41.07ZM46.40,32.93Q50.67,32.93 53.33,34.30Q56.00,35.67 57.23,38.03Q58.47,40.40 58.47,43.40Q58.47,48.60 54.27,51.77Q50.07,54.93 41.93,55.47L40.67,48.60Q44.13,48.20 46.03,47.57Q47.93,46.93 48.70,46.03Q49.47,45.13 49.47,43.87Q49.47,42.20 48.37,41.37Q47.27,40.53 45.27,40.53Q43.27,40.53 41.27,41.10Q39.27,41.67 37.27,42.80L34.73,35.73Q37.20,34.40 40.17,33.67Q43.13,32.93 46.40,32.93ZM59.47,60.40Q59.47,65.80 56.03,68.80Q52.60,71.80 46.67,71.80Q42.20,71.80 38.63,70.03Q35.07,68.27 31.97,64.10Q28.87,59.93 26.00,52.67L33.20,49.13Q36.13,56.80 39.00,60.47Q41.87,64.13 45.53,64.13Q47.93,64.13 49.30,62.93Q50.67,61.73 50.67,59.47Q50.67,57.20 49.10,55.37Q47.53,53.53 44.80,51.93L49.07,50.13L53.60,50.00Q54.60,50.80 55.63,51.80Q56.67,52.80 57.33,53.87L57.93,55.07Q58.67,56.20 59.07,57.53Q59.47,58.87 59.47,60.40ZM59.87,51.53Q62.40,51.53 64.77,51.03Q67.13,50.53 69.40,49.33L69.80,57.07Q67.87,57.87 65.90,58.27Q63.93,58.67 61.80,58.67Q59.60,58.67 57.47,58.27Q55.33,57.87 53.53,57.33L52.53,51.73L53.33,50.80Q54.73,51.20 56.37,51.37Q58.00,51.53 59.87,51.53Z" />
+</vector>
