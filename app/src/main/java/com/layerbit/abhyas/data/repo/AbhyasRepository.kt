@@ -1,0 +1,143 @@
+package com.layerbit.abhyas.data.repo
+
+import android.content.Context
+import com.layerbit.abhyas.data.db.AbhyasDatabase
+import com.layerbit.abhyas.data.db.CardEntity
+import com.layerbit.abhyas.data.db.DailyCount
+import com.layerbit.abhyas.data.db.DeckEntity
+import com.layerbit.abhyas.data.db.DeckSummary
+import com.layerbit.abhyas.data.db.ReviewLogEntity
+import com.layerbit.abhyas.data.generate.CardCandidate
+import com.layerbit.abhyas.data.model.CardState
+import com.layerbit.abhyas.data.model.Grade
+import com.layerbit.abhyas.data.srs.Scheduler
+import kotlinx.coroutines.flow.Flow
+
+/** Everything the UI is allowed to do to the collection. */
+class AbhyasRepository(context: Context) {
+
+    private val db = AbhyasDatabase.get(context)
+    private val decks = db.deckDao()
+    private val cards = db.cardDao()
+    private val log = db.reviewLogDao()
+
+    // ------------------------------------------------------------------------------------ decks
+
+    fun deckSummaries(now: Long = System.currentTimeMillis()): Flow<List<DeckSummary>> =
+        decks.summaries(now)
+
+    fun deckSummary(deckId: Long, now: Long = System.currentTimeMillis()): Flow<DeckSummary?> =
+        decks.summary(deckId, now)
+
+    suspend fun createDeck(name: String): Long {
+        val now = System.currentTimeMillis()
+        return decks.insert(DeckEntity(name = name.trim(), createdAt = now, lastUsedAt = now))
+    }
+
+    suspend fun renameDeck(deckId: Long, name: String) {
+        decks.byId(deckId)?.let { decks.update(it.copy(name = name.trim())) }
+    }
+
+    suspend fun deleteDeck(deckId: Long) {
+        decks.byId(deckId)?.let { decks.delete(it) }
+    }
+
+    // ------------------------------------------------------------------------------------ cards
+
+    fun cardsInDeck(deckId: Long): Flow<List<CardEntity>> = cards.inDeck(deckId)
+
+    /**
+     * Commit the candidates the user kept on the review screen.
+     *
+     * They land as NEW with `dueAt = 0`, which is what puts them at the front of the queue the
+     * moment the deck is next opened - a student who has just photographed a page expects to be
+     * able to study it immediately, not tomorrow.
+     */
+    suspend fun addCards(deckId: Long, candidates: List<CardCandidate>): Int {
+        if (candidates.isEmpty()) return 0
+        val now = System.currentTimeMillis()
+        val rows = candidates.map {
+            CardEntity(
+                deckId = deckId,
+                front = it.front.trim(),
+                back = it.back.trim(),
+                sourceText = it.sourceText.trim().takeIf { s -> s.isNotEmpty() },
+                state = CardState.NEW,
+                dueAt = 0L,
+                createdAt = now
+            )
+        }
+        cards.insertAll(rows)
+        decks.touch(deckId, now)
+        return rows.size
+    }
+
+    suspend fun updateCard(card: CardEntity) = cards.update(card)
+
+    suspend fun deleteCard(card: CardEntity) = cards.delete(card)
+
+    suspend fun setSuspended(card: CardEntity, suspended: Boolean) =
+        cards.update(card.copy(suspended = suspended))
+
+    // ------------------------------------------------------------------------------- study loop
+
+    /**
+     * Build the queue for one sitting: everything genuinely due, then up to [newLimit] unseen
+     * cards behind it.
+     *
+     * The cap on new cards is the whole reason this is not one query. Someone who has just
+     * imported four chapters has hundreds of NEW rows, and serving them all would bury the
+     * handful of reviews that are actually keeping their existing knowledge alive.
+     */
+    suspend fun buildQueue(deckId: Long, newLimit: Int = DEFAULT_NEW_PER_SESSION): List<CardEntity> {
+        val now = System.currentTimeMillis()
+        return cards.dueNow(deckId, now) + cards.newCards(deckId, newLimit)
+    }
+
+    /**
+     * Record an answer: advance the card's scheduling and append to the log.
+     *
+     * Returns the updated card so the session can decide whether it needs showing again in this
+     * same sitting (anything still in a minute-scale state does).
+     */
+    suspend fun answer(card: CardEntity, grade: Grade): CardEntity {
+        val now = System.currentTimeMillis()
+        val before = card.scheduling()
+        val after = Scheduler.next(before, grade, now)
+        val updated = card.withScheduling(after)
+
+        cards.update(updated)
+        log.insert(
+            ReviewLogEntity(
+                cardId = card.id,
+                deckId = card.deckId,
+                reviewedAt = now,
+                grade = grade,
+                intervalBefore = before.intervalDays,
+                intervalAfter = after.intervalDays
+            )
+        )
+        decks.touch(card.deckId, now)
+        return updated
+    }
+
+    /** When the soonest card in this deck comes back, or null if nothing is scheduled. */
+    suspend fun nextDueAt(deckId: Long): Long? = cards.nextDueAt(deckId)
+
+    // ------------------------------------------------------------------------------------ stats
+
+    fun reviewsSince(since: Long): Flow<Int> = log.countSince(since)
+
+    fun dailyCounts(since: Long): Flow<List<DailyCount>> = log.dailyCounts(since)
+
+    fun totalReviews(): Flow<Int> = log.totalReviews()
+
+    companion object {
+        /**
+         * New cards introduced per sitting. Twenty is Anki's long-standing default and it holds
+         * up: each one will be seen several times today and then on a growing schedule for
+         * months, so the real cost of a new card is much larger than it looks on the day.
+         */
+        const val DEFAULT_NEW_PER_SESSION = 20
+    }
+}

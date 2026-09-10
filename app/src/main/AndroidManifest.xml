@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!--
+      Abhyas holds the same line Deja does: no INTERNET permission, so the process cannot open a
+      socket and a student's notes cannot leave the phone even if some dependency tried to send
+      them. Anyone can check it on the Play Store listing without trusting a policy document.
+
+      This is not decoration on a study app. The pages people photograph are coursework, tuition
+      material and their own handwriting, and plenty of it is copyrighted or simply private.
+      Keeping the permission off means there is no server to breach and no account to leak.
+
+      Libraries declare permissions of their own and the manifest merger unions them in, so the
+      two entries below strip network access back out no matter what any current or future
+      dependency asks for. Never "fix" a merger conflict by dropping these lines - check the
+      result in app/build/outputs/logs/manifest-merger-*-report.txt after a build.
+
+      Two consequences that shape the code, both inherited from Deja:
+        - OCR uses ML Kit's *bundled* text recogniser. The model ships inside the APK; the
+          unbundled build downloads it at runtime and would need network.
+        - Card generation runs on-device (data/generate/). A cloud model would write better
+          questions, and that trade was made deliberately in favour of the guarantee above.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+
+    <!-- Photographing a page is how cards get made. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
+
+    <!--
+      Importing an existing photo goes through ActivityResultContracts.PickVisualMedia, which
+      hands back a single user-chosen image through the system photo picker. That deliberately
+      needs no storage permission at all, so Abhyas never asks for access to the gallery.
+    -->
+
+    <application
+        android:name=".AbhyasApplication"
+        android:allowBackup="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.Abhyas">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:configChanges="orientation|screenSize|keyboardHidden|uiMode"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Abhyas">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+    </application>
+
+</manifest>
