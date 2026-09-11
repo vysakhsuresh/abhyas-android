@@ -21,12 +21,14 @@ import com.layerbit.abhyas.ui.about.AboutScreen
 import com.layerbit.abhyas.ui.capture.CaptureScreen
 import com.layerbit.abhyas.ui.deck.DeckScreen
 import com.layerbit.abhyas.ui.decks.DecksScreen
+import com.layerbit.abhyas.ui.settings.SettingsScreen
 import com.layerbit.abhyas.ui.study.StudyScreen
 import com.layerbit.abhyas.ui.theme.AbhyasColors
 
 object Routes {
     const val DECKS = "decks"
     const val ABOUT = "about"
+    const val SETTINGS = "settings"
     const val DECK = "deck/{deckId}"
     const val STUDY = "study/{deckId}"
     const val CAPTURE = "capture/{deckId}"
@@ -48,7 +50,8 @@ fun AbhyasApp() {
         composable(Routes.DECKS) {
             DecksScreen(
                 onOpenDeck = { navController.navigate(Routes.deck(it)) },
-                onAbout = { navController.navigate(Routes.ABOUT) }
+                onAbout = { navController.navigate(Routes.ABOUT) },
+                onSettings = { navController.navigate(Routes.SETTINGS) }
             )
         }
 
@@ -75,6 +78,10 @@ fun AbhyasApp() {
 
         composable(Routes.ABOUT) {
             AboutScreen(onBack = navController::popBackStackSafely)
+        }
+
+        composable(Routes.SETTINGS) {
+            SettingsScreen(onBack = navController::popBackStackSafely)
         }
     }
 }

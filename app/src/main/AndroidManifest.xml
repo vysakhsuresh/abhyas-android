@@ -25,6 +25,16 @@
     <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
 
+    <!--
+      Android 13+ notification permission.
+
+      Declaring it does NOT turn anything on. Reminders ship off, nothing is scheduled until the
+      user switches them on in Settings, and the permission is requested at that moment rather
+      than at first launch - a permission prompt before the user knows what it is for is how apps
+      earn a denial they can never come back from.
+    -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Photographing a page is how cards get made. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />

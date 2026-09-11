@@ -1,5 +1,6 @@
 package com.layerbit.abhyas.ui.deck
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -25,7 +26,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -48,6 +51,7 @@ import com.layerbit.abhyas.ui.components.StatRow
 import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -64,6 +68,23 @@ class DeckViewModel(
 
     fun deleteCard(card: CardEntity) {
         viewModelScope.launch { repository.deleteCard(card) }
+    }
+
+    /** Other decks this one could be folded into. Never includes itself. */
+    val otherDecks = repository.deckSummaries()
+        .map { all -> all.filter { it.id != deckId } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun rename(name: String) {
+        if (name.isBlank()) return
+        viewModelScope.launch { repository.renameDeck(deckId, name) }
+    }
+
+    fun mergeInto(destination: Long, onMerged: () -> Unit) {
+        viewModelScope.launch {
+            repository.mergeDecks(source = deckId, destination = destination)
+            onMerged()
+        }
     }
 
     fun setScript(script: ScriptOption) {
@@ -103,9 +124,12 @@ fun DeckScreen(
     val viewModel = repositoryViewModel(key = "deck-$deckId") { DeckViewModel(it, deckId) }
     val summary by viewModel.summary.collectAsStateWithLifecycle()
     val cards by viewModel.cards.collectAsStateWithLifecycle()
+    val otherDecks by viewModel.otherDecks.collectAsStateWithLifecycle()
 
     var confirmingDelete by remember { mutableStateOf(false) }
     var changingScript by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
+    var merging by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<CardEntity?>(null) }
 
     LazyColumn(
@@ -124,19 +148,33 @@ fun DeckScreen(
                     fontSize = 14.sp,
                     modifier = Modifier.clickable(onClick = onBack)
                 )
-                Text(
-                    text = "Delete deck",
-                    color = AbhyasColors.Again,
-                    fontSize = 14.sp,
-                    modifier = Modifier.clickable { confirmingDelete = true }
-                )
+                Row {
+                    if (otherDecks.isNotEmpty()) {
+                        Text(
+                            text = "Merge",
+                            color = AbhyasColors.Muted,
+                            fontSize = 14.sp,
+                            modifier = Modifier.clickable { merging = true }
+                        )
+                        Spacer(Modifier.width(16.dp))
+                    }
+                    Text(
+                        text = "Delete",
+                        color = AbhyasColors.Again,
+                        fontSize = 14.sp,
+                        modifier = Modifier.clickable { confirmingDelete = true }
+                    )
+                }
             }
             Spacer(Modifier.height(18.dp))
+            // Tapping the title renames it - the obvious gesture, and it keeps a rename action
+            // out of a header that already has two destructive-looking ones.
             Text(
                 text = summary?.name ?: "",
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
-                letterSpacing = (-1).sp
+                letterSpacing = (-1).sp,
+                modifier = Modifier.clickable { renaming = true }
             )
         }
 
@@ -175,6 +213,29 @@ fun DeckScreen(
                 )
             }
         }
+    }
+
+    if (renaming) {
+        RenameDeckDialog(
+            current = summary?.name.orEmpty(),
+            onRename = {
+                viewModel.rename(it)
+                renaming = false
+            },
+            onDismiss = { renaming = false }
+        )
+    }
+
+    if (merging) {
+        MergeDeckDialog(
+            sourceName = summary?.name.orEmpty(),
+            destinations = otherDecks,
+            onMerge = { destination ->
+                merging = false
+                viewModel.mergeInto(destination, onDeleted)
+            },
+            onDismiss = { merging = false }
+        )
     }
 
     if (changingScript) {
@@ -450,4 +511,97 @@ private fun EditField(label: String, value: String, onChange: (String) -> Unit) 
             )
         )
     }
+}
+
+@Composable
+private fun RenameDeckDialog(
+    current: String,
+    onRename: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf(current) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = AbhyasColors.Surface,
+        title = { Text("Rename deck", fontWeight = FontWeight.Bold) },
+        text = { EditField("Name", name) { name = it } },
+        confirmButton = {
+            Text(
+                text = "Rename",
+                color = if (name.isBlank()) AbhyasColors.Dim else AbhyasColors.Saffron,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clickable(enabled = name.isNotBlank()) { onRename(name) }
+                    .padding(12.dp)
+            )
+        },
+        dismissButton = {
+            Text(
+                text = "Cancel",
+                color = AbhyasColors.Muted,
+                modifier = Modifier.clickable(onClick = onDismiss).padding(12.dp)
+            )
+        }
+    )
+}
+
+/**
+ * Fold this deck into another one.
+ *
+ * Phrased as "move these cards into..." rather than "merge", because the outcome that matters to
+ * the user is where their cards end up and which deck disappears. Cards keep their schedules;
+ * only the filing changes.
+ */
+@Composable
+private fun MergeDeckDialog(
+    sourceName: String,
+    destinations: List<DeckSummary>,
+    onMerge: (Long) -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = AbhyasColors.Surface,
+        title = { Text("Move cards into", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    text = "Every card in \"$sourceName\" moves to the deck you pick, keeping " +
+                        "its schedule. \"$sourceName\" is then deleted.",
+                    color = AbhyasColors.Muted,
+                    fontSize = 13.5.sp,
+                    lineHeight = 19.sp
+                )
+                Spacer(Modifier.height(14.dp))
+                destinations.forEach { deck ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(AbhyasColors.SurfaceDim)
+                            .clickable { onMerge(deck.id) }
+                            .padding(horizontal = 14.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(deck.name, fontSize = 14.5.sp, fontWeight = FontWeight.Medium)
+                        Text(
+                            text = "${deck.total} cards",
+                            color = AbhyasColors.Dim,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Text(
+                text = "Cancel",
+                color = AbhyasColors.Muted,
+                modifier = Modifier.clickable(onClick = onDismiss).padding(12.dp)
+            )
+        }
+    )
 }

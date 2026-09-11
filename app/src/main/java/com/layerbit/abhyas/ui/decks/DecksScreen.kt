@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -36,6 +37,7 @@ import androidx.lifecycle.viewModelScope
 import com.layerbit.abhyas.data.db.DeckSummary
 import com.layerbit.abhyas.data.ocr.ScriptOption
 import com.layerbit.abhyas.data.repo.AbhyasRepository
+import com.layerbit.abhyas.data.stats.Streak
 import com.layerbit.abhyas.ui.components.Card
 import com.layerbit.abhyas.ui.components.EmptyState
 import com.layerbit.abhyas.ui.components.Pill
@@ -44,7 +46,10 @@ import com.layerbit.abhyas.ui.components.ScriptPicker
 import com.layerbit.abhyas.ui.components.ScreenTitle
 import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
+import java.time.LocalDate
+import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -58,6 +63,19 @@ class DecksViewModel(private val repository: AbhyasRepository) : ViewModel() {
     val decks = repository.deckSummaries()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /**
+     * The current streak, in days.
+     *
+     * Ninety days of history is plenty: a streak longer than that is unbroken by definition, and
+     * loading a user's entire review log to draw one number would get slower every month.
+     */
+    val streak = repository
+        .dailyCounts(System.currentTimeMillis() - TimeUnit.DAYS.toMillis(90))
+        .map { counts ->
+            Streak.current(Streak.parseDays(counts.map { it.day }), LocalDate.now())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
     fun createDeck(name: String, script: ScriptOption) {
         if (name.isBlank()) return
         viewModelScope.launch { repository.createDeck(name, script) }
@@ -65,9 +83,10 @@ class DecksViewModel(private val repository: AbhyasRepository) : ViewModel() {
 }
 
 @Composable
-fun DecksScreen(onOpenDeck: (Long) -> Unit, onAbout: () -> Unit) {
+fun DecksScreen(onOpenDeck: (Long) -> Unit, onAbout: () -> Unit, onSettings: () -> Unit) {
     val viewModel = repositoryViewModel { DecksViewModel(it) }
     val decks by viewModel.decks.collectAsStateWithLifecycle()
+    val streak by viewModel.streak.collectAsStateWithLifecycle()
 
     var creating by remember { mutableStateOf(false) }
 
@@ -85,12 +104,32 @@ fun DecksScreen(onOpenDeck: (Long) -> Unit, onAbout: () -> Unit) {
                 verticalAlignment = Alignment.Top
             ) {
                 ScreenTitle("Abhyas", "Your notes ask the questions.")
-                Text(
-                    text = "About",
-                    color = AbhyasColors.Muted,
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(top = 8.dp).clickable(onClick = onAbout)
+                Row(modifier = Modifier.padding(top = 8.dp)) {
+                    Text(
+                        text = "Settings",
+                        color = AbhyasColors.Muted,
+                        fontSize = 14.sp,
+                        modifier = Modifier.clickable(onClick = onSettings)
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Text(
+                        text = "About",
+                        color = AbhyasColors.Muted,
+                        fontSize = 14.sp,
+                        modifier = Modifier.clickable(onClick = onAbout)
+                    )
+                }
+            }
+
+            // Only shown once there is one. A streak counter reading "0 days" on the first
+            // launch is a scoreboard telling a new user they are already losing.
+            if (streak > 0) {
+                Spacer(Modifier.height(2.dp))
+                Pill(
+                    text = if (streak == 1) "1 day streak" else "$streak day streak",
+                    color = AbhyasColors.SaffronBright
                 )
+                Spacer(Modifier.height(10.dp))
             }
         }
 

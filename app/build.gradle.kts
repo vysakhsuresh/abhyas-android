@@ -99,6 +99,12 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling")
     implementation("androidx.compose.ui:ui-tooling-preview")
 
+    // Drives the daily reminder. WorkManager rather than AlarmManager because the reminder is a
+    // nudge, not an alarm: it should survive a reboot, respect Doze, and never claim the
+    // exact-alarm permission, which Android 13+ reserves for things like alarm clocks and which
+    // a study app has no business asking for.
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
@@ -132,4 +138,8 @@ dependencies {
     // explicitly rather than leaned on as a transitive of Room/Lifecycle, so a dependency bump
     // elsewhere cannot quietly break the test source set.
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.1")
+    // android.jar's org.json is a stub that throws on every call, so BackupCodec would be
+    // untestable without this. The backup file is the only thing standing between a user and
+    // losing their whole collection with a phone, so it does not get to go untested.
+    testImplementation("org.json:json:20240303")
 }

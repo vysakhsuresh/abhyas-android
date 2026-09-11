@@ -35,6 +35,9 @@ interface DeckDao {
     @Query("SELECT * FROM decks WHERE id = :id")
     suspend fun byId(id: Long): DeckEntity?
 
+    @Query("SELECT * FROM decks ORDER BY lastUsedAt DESC")
+    suspend fun all(): List<DeckEntity>
+
     @Query("UPDATE decks SET lastUsedAt = :at WHERE id = :id")
     suspend fun touch(id: Long, at: Long)
 
@@ -149,6 +152,28 @@ interface CardDao {
 
     @Query("DELETE FROM cards WHERE deckId = :deckId")
     suspend fun deleteAllInDeck(deckId: Long)
+
+    /**
+     * Everything waiting across every deck, due plus unseen. What the daily reminder counts.
+     *
+     * New cards are capped per session when studying, but not here - the reminder is answering
+     * "is there anything to do?", and a thousand unseen cards is emphatically a yes.
+     */
+    @Query(
+        """
+        SELECT COUNT(*) FROM cards
+         WHERE suspended = 0
+           AND (state = 'NEW' OR dueAt <= :now)
+        """
+    )
+    suspend fun totalWaiting(now: Long): Int
+
+    /** Move every card from one deck to another. The merge. */
+    @Query("UPDATE cards SET deckId = :destination WHERE deckId = :source")
+    suspend fun moveAll(source: Long, destination: Long)
+
+    @Query("SELECT * FROM cards")
+    suspend fun allCards(): List<CardEntity>
 }
 
 /** One day's answer count, for the streak strip on the stats screen. */
@@ -184,4 +209,11 @@ interface ReviewLogDao {
 
     @Query("SELECT COUNT(*) FROM review_log")
     fun totalReviews(): Flow<Int>
+
+    /** A plain count rather than a Flow, for the reminder worker to ask once and exit. */
+    @Query("SELECT COUNT(*) FROM review_log WHERE reviewedAt >= :since")
+    suspend fun countSinceOnce(since: Long): Int
+
+    @Query("UPDATE review_log SET deckId = :destination WHERE deckId = :source")
+    suspend fun moveAll(source: Long, destination: Long)
 }

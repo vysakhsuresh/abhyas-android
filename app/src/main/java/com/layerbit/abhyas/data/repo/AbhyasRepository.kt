@@ -1,6 +1,7 @@
 package com.layerbit.abhyas.data.repo
 
 import android.content.Context
+import com.layerbit.abhyas.data.backup.Backup
 import com.layerbit.abhyas.data.db.AbhyasDatabase
 import com.layerbit.abhyas.data.db.CardEntity
 import com.layerbit.abhyas.data.db.DailyCount
@@ -12,6 +13,7 @@ import com.layerbit.abhyas.data.model.CardState
 import com.layerbit.abhyas.data.model.Grade
 import com.layerbit.abhyas.data.ocr.ScriptOption
 import com.layerbit.abhyas.data.srs.Scheduler
+import java.util.Calendar
 import kotlinx.coroutines.flow.Flow
 
 /** Everything the UI is allowed to do to the collection. */
@@ -146,6 +148,75 @@ class AbhyasRepository(context: Context) {
     fun dailyCounts(since: Long): Flow<List<DailyCount>> = log.dailyCounts(since)
 
     fun totalReviews(): Flow<Int> = log.totalReviews()
+
+    // ------------------------------------------------------------------------------ reminders
+
+    /** Cards waiting across every deck, due plus unseen. What the reminder counts. */
+    suspend fun totalWaitingNow(): Int = cards.totalWaiting(System.currentTimeMillis())
+
+    /**
+     * Answers given since local midnight.
+     *
+     * The reminder uses this to stay quiet when the day's work is already done. Local midnight
+     * rather than "24 hours ago", because someone who studied at 11pm last night has not studied
+     * today and should still be reminded.
+     */
+    suspend fun reviewedToday(): Int = log.countSinceOnce(startOfToday())
+
+    private fun startOfToday(): Long = Calendar.getInstance().apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }.timeInMillis
+
+    // ----------------------------------------------------------------------------- deck admin
+
+    /**
+     * Fold [source] into [destination] and delete the empty shell.
+     *
+     * Cards keep their scheduling, and their review history is repointed too - a merge is a
+     * filing decision, not a reason to lose what the user has learned. Merging a deck into
+     * itself is refused rather than silently deleting it.
+     */
+    suspend fun mergeDecks(source: Long, destination: Long) {
+        if (source == destination) return
+        cards.moveAll(source, destination)
+        log.moveAll(source, destination)
+        decks.byId(source)?.let { decks.delete(it) }
+        decks.touch(destination, System.currentTimeMillis())
+    }
+
+    // -------------------------------------------------------------------------------- backup
+
+    suspend fun exportBackup(): Backup = Backup(decks = decks.all(), cards = cards.allCards())
+
+    /**
+     * Restore a backup **alongside** whatever is already here, never over it.
+     *
+     * Every deck is inserted fresh and its cards repointed at the new id, so restoring into a
+     * collection that already has decks cannot collide with them - and, more importantly,
+     * restoring the wrong file cannot destroy the right collection. Undoing an unwanted restore
+     * is deleting some decks; undoing a wipe would be impossible.
+     *
+     * Returns how many decks and cards actually landed.
+     */
+    suspend fun restoreBackup(backup: Backup): Pair<Int, Int> {
+        var restoredCards = 0
+        val now = System.currentTimeMillis()
+
+        backup.decks.forEach { deck ->
+            val newId = decks.insert(deck.copy(id = 0, lastUsedAt = now))
+            val forDeck = backup.cards
+                .filter { it.deckId == deck.id }
+                .map { it.copy(id = 0, deckId = newId) }
+            if (forDeck.isNotEmpty()) {
+                cards.insertAll(forDeck)
+                restoredCards += forDeck.size
+            }
+        }
+        return backup.decks.size to restoredCards
+    }
 
     companion object {
         /**

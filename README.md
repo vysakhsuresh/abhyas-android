@@ -49,8 +49,50 @@ Three consequences that shape the code:
 - **No analytics, no crash reporting, no remote config.** If something breaks in the field, we
   find out because someone tells us.
 
-The only permission Abhyas asks for is `CAMERA`. Importing an existing photo goes through the
-system photo picker, which needs no storage permission at all.
+Abhyas asks for `CAMERA`, and for notifications **only if you turn reminders on**. Importing an
+existing photo goes through the system photo picker, which needs no storage permission at all.
+
+## The daily reminder
+
+**Off. Nothing is scheduled, no notification channel is created and no permission is requested
+until you switch it on yourself in Settings.** An app that starts nudging you because it was
+installed has decided something on your behalf that was never its call.
+
+When you do switch it on, the permission is requested at that moment — not at first launch,
+where a prompt arrives before anyone knows what it is for and earns a denial you can never come
+back from. Deny it and reminders stay off and say so, rather than storing an intention the
+system will never honour.
+
+Three things it refuses to do, all of them the reason reminders get switched off for good:
+
+- **Fire when nothing is due.** A notification that leads to an empty deck teaches people to
+  dismiss the next one unread.
+- **Fire when you have already studied that day.**
+- **Fire twice.** WorkManager guarantees a job runs *at least* once per period, not exactly once,
+  so a device waking from a long sleep can run a deferred job immediately.
+
+It also re-checks consent on every run — permission can be revoked in system settings without the
+app ever being opened again, and the honest response to that is to stop and turn the setting off.
+Settings does the same check when opened, so the toggle never claims to be on when nothing can
+be posted.
+
+A chain of one-shot jobs, not a `PeriodicWorkRequest`: a periodic request cannot be anchored to a
+wall-clock time, so "remind me at 7pm" would drift into "some point in the evening, eventually".
+
+## Backup
+
+No account and no sync, so the export file is the only way a collection survives a lost phone.
+
+- **Schedules travel with the cards.** Restoring the words but not the intervals would hand back
+  a pile of new cards and quietly erase months of work.
+- **Restoring adds, never replaces.** Every deck comes in fresh alongside what is already there,
+  so the wrong file costs you a few decks to delete instead of everything. Undoing an unwanted
+  restore is easy; undoing a wipe would be impossible.
+- **Reading is forgiving.** A file from a newer version, hand-edited, or truncated restores what
+  it can. Every field falls back to a sane default and an unreadable row is skipped, not fatal.
+
+Plain JSON through the system file picker, so the file lands wherever the user chooses and stays
+readable in a text editor.
 
 ## Scripts
 
@@ -174,12 +216,16 @@ app/src/main/java/com/layerbit/abhyas/
                  ScriptOption / ScriptProfile - every language-specific rule, in one place
     generate/    CardGenerator interface + the heuristic implementation
     repo/        AbhyasRepository - everything the UI may do to the collection
+    reminder/    ReminderPreferences / Scheduler / Worker - the opt-in daily nudge
+    stats/       Streak - pure, and deliberately forgiving about today
+    backup/      BackupCodec - export and restore as plain JSON
     model/       Grade, CardState
   ui/
-    decks/       Deck list with due and new counts
+    decks/       Deck list with due and new counts, and the streak
     deck/        One deck: counts, study, add cards, browse every card
     capture/     Camera -> reading -> review -> saved, as one screen with four states
     study/       The review loop and the four grade buttons
+    settings/    Reminder consent and time, export and restore
     about/       Practice stats, the privacy story, support links
     theme/       Palette and Space Grotesk
 ```
@@ -213,10 +259,15 @@ No `google-services.json` is required.
 ./gradlew :app:testDebugUnitTest
 ```
 
-`SchedulerTest` pins the spaced-repetition arithmetic; `HeuristicCardGeneratorTest` runs the
-whole pipeline over realistic OCR output in English, Hindi and Chinese. Every case in the latter
-is a bug that actually reached the working tree, and every one of them failed silently — the app
-kept producing cards, they were just the wrong cards.
+Five test classes, all of them covering things that fail *silently*:
+
+| Test | Guards against |
+|---|---|
+| `SchedulerTest` | An interval 30% wrong is invisible until months of study are wasted |
+| `HeuristicCardGeneratorTest` | Every case is a bug that reached the working tree — wrong cards, or a whole pass quietly not firing |
+| `StreakTest` | A streak counter that reads zero every morning talks people out of their own habit |
+| `BackupCodecTest` | The file is the only thing between a user and losing a collection with a phone |
+| `ReminderSchedulerTest` | A reminder at the wrong hour still fires — nobody reports it, they just switch reminders off |
 
 This repository's sandbox had no Android SDK and no access to Google's Maven repo, so **the
 Gradle build has not been run end to end** — the source was written and reviewed by hand against
@@ -229,15 +280,18 @@ stopped the highest-confidence pass firing at all — were found and fixed befor
 
 ## Status
 
-Working end to end in source: create a deck, photograph a page, review the suggestions, study
-with real spaced repetition.
+Feature-complete for a first release, in source. Create a deck in any of five scripts,
+photograph a page, approve the suggested cards, study with real spaced repetition, edit, rename
+and merge what you have, opt into a daily reminder, and export the lot to a file.
 
-Not built yet:
+Known limits, none of which are oversights:
 
-- A daily reminder, and a streak worth defending
-- Tamil, Telugu, Bengali and the other Indic scripts — ML Kit has no bundled model for them, so
-  they need a different OCR engine rather than another line in the gradle file
-- Handwriting is only as good as the underlying recogniser, which is to say: mixed
-- Reordering or merging decks
-- Any export at all. A collection lives and dies on one device, which is the cost of having no
-  account and no network
+- **Tamil, Telugu, Bengali and the other Indic scripts.** ML Kit ships no bundled model for them.
+  This needs a different OCR engine, not another line in the gradle file, and it is the single
+  biggest gap for an Indian audience.
+- **Handwriting** is only as good as the underlying recogniser, which is to say: mixed. Printed
+  pages are reliable; a rushed lecture note often is not.
+- **No sync.** Two phones means two collections and a backup file passed between them — the
+  direct cost of having no account and no network, and a deliberate trade.
+- **Card generation is heuristic.** A language model would write better questions. `CardGenerator`
+  is a one-method interface so that stays a decision rather than a rewrite.
