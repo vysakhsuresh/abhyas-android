@@ -1,6 +1,8 @@
 package com.layerbit.abhyas.data.generate
 
+import com.layerbit.abhyas.data.ocr.PageBlock
 import com.layerbit.abhyas.data.ocr.PageText
+import com.layerbit.abhyas.data.ocr.TextBox
 import com.layerbit.abhyas.data.ocr.ScriptProfile
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -24,7 +26,19 @@ class HeuristicCardGeneratorTest {
     private val generator = HeuristicCardGenerator()
 
     private fun cards(blocks: List<List<String>>, profile: ScriptProfile) =
-        runBlocking { generator.generate(PageText(blocks, profile)) }
+        runBlocking { generator.generate(PageText.ofLines(blocks, profile)) }
+
+    private fun cardsFrom(page: PageText) = runBlocking { generator.generate(page) }
+
+    /**
+     * A block laid out on a notional 1000px-wide page, one line 40px tall per line of text,
+     * starting at [top]. Enough geometry for the stitching rules to be exercised honestly.
+     */
+    private fun block(top: Int, vararg lines: String, left: Int = 100, right: Int = 900) =
+        PageBlock(
+            lines = lines.toList(),
+            box = TextBox(left, top, right, top + lines.size * LINE_HEIGHT)
+        )
 
     private fun List<CardCandidate>.withFront(text: String) = firstOrNull { it.front == text }
 
@@ -49,7 +63,7 @@ class HeuristicCardGeneratorTest {
 
     @Test
     fun `wrapped OCR lines are rejoined into whole sentences`() {
-        val page = PageText(englishPage, ScriptProfile.Latin)
+        val page = PageText.ofLines(englishPage, ScriptProfile.Latin)
 
         assertTrue(
             "a paragraph split across three OCR lines must come back as one sentence",
@@ -166,7 +180,7 @@ class HeuristicCardGeneratorTest {
 
     @Test
     fun `Hindi sentences split on the danda`() {
-        val page = PageText(hindiPage, ScriptProfile.Devanagari)
+        val page = PageText.ofLines(hindiPage, ScriptProfile.Devanagari)
 
         assertTrue(
             "a full stop is not how Hindi ends a sentence",
@@ -212,7 +226,7 @@ class HeuristicCardGeneratorTest {
     fun `Hindi paragraphs still join across wrapped lines`() {
         // Regression: Devanagari has no capital letters, so the Latin heading test - short and
         // unterminated - matched ordinary wrapped body lines and stopped paragraphs joining.
-        val page = PageText(hindiPage, ScriptProfile.Devanagari)
+        val page = PageText.ofLines(hindiPage, ScriptProfile.Devanagari)
 
         assertTrue(
             page.runs().any { it.contains("हरे पौधे सूर्य के प्रकाश") }
@@ -256,7 +270,7 @@ class HeuristicCardGeneratorTest {
 
     @Test
     fun `CJK lines join without inserting spaces`() {
-        val page = PageText(
+        val page = PageText.ofLines(
             listOf(listOf("光合作用是绿色植物", "利用阳光制造养分的过程。")),
             ScriptProfile.Cjk.Chinese
         )
@@ -278,21 +292,25 @@ class HeuristicCardGeneratorTest {
      * against the unsorted order on purpose - OCR reading order is never a guarantee, and these
      * cards have to come out right either way.
      */
-    private val photographedPage = listOf(
-        listOf("Photosynthesis: the process by which green plants"),
-        listOf("make their own food using sunlight."),
-        listOf("Chlorophyll: the green pigment found in leaves."),
-        listOf("Q1. Where does photosynthesis take place?"),
-        listOf("The mitochondrion is the powerhouse of the cell."),
-        listOf("Ans. In the chloroplasts of the leaf cells.")
+    private val photographedPage = PageText(
+        listOf(
+            block(100, "Photosynthesis: the process by which green plants"),
+            block(140, "make their own food using sunlight."),
+            block(220, "Chlorophyll: the green pigment found in leaves."),
+            block(300, "Q1. Where does photosynthesis take place?"),
+            // Sits between the question and its answer on the page, exactly as it did in the
+            // photograph that exposed this.
+            block(380, "The mitochondrion is the powerhouse of the cell."),
+            block(460, "Ans. In the chloroplasts of the leaf cells.")
+        ),
+        ScriptProfile.Latin
     )
 
     @Test
     fun `a question is paired with its labelled answer, not with whatever block came next`() {
         // Shipped bug: this card asked where photosynthesis takes place and answered "The
         // mitochondrion is the powerhouse of the cell", because that block was next in the list.
-        val qa = cards(photographedPage, ScriptProfile.Latin)
-            .first { it.kind == CardKind.QA }
+        val qa = cardsFrom(photographedPage).first { it.kind == CardKind.QA }
 
         assertEquals("Where does photosynthesis take place?", qa.front)
         assertEquals("In the chloroplasts of the leaf cells.", qa.back)
@@ -302,8 +320,7 @@ class HeuristicCardGeneratorTest {
     fun `a paragraph split across blocks is rejoined before it is turned into a card`() {
         // Shipped bug: the answer stopped at "green plants" because the rest of the sentence was
         // in a different ML Kit block and joining never crossed one.
-        val definition = cards(photographedPage, ScriptProfile.Latin)
-            .first { it.front == "What is Photosynthesis?" }
+        val definition = cardsFrom(photographedPage).first { it.front == "What is Photosynthesis?" }
 
         assertEquals(
             "the process by which green plants make their own food using sunlight",
@@ -314,11 +331,74 @@ class HeuristicCardGeneratorTest {
     @Test
     fun `a line stolen as a wrong answer is still available as its own card`() {
         // The mitochondrion line was consumed as a bogus answer, so its own good card vanished.
-        val mitochondrion = cards(photographedPage, ScriptProfile.Latin)
+        val mitochondrion = cardsFrom(photographedPage)
             .firstOrNull { it.front == "What is The mitochondrion?" }
 
         assertNotNull("the page defines it, so it should be offered", mitochondrion)
         assertEquals("the powerhouse of the cell", mitochondrion!!.back)
+    }
+
+    @Test
+    fun `a menu bar is never stitched onto a sentence it merely sits near`() {
+        // Shipped bug, from photographing the page in a text editor on screen. The window's menu
+        // bar was welded onto a continuation line, producing the card
+        // "File _____ View make their own food using sunlight." - and eating the real sentence,
+        // which stayed truncated at "green plants".
+        val onScreen = PageText(
+            listOf(
+                block(20, "File Edit Format View Help", left = 0, right = 400),
+                block(100, "Photosynthesis: the process by which green plants"),
+                block(140, "make their own food using sunlight.")
+            ),
+            ScriptProfile.Latin
+        )
+
+        val result = cardsFrom(onScreen)
+
+        assertTrue(
+            "nothing should mention the menu bar",
+            result.none { it.front.contains("File") || it.back.contains("File") }
+        )
+        assertEquals(
+            "and the real sentence must still be whole",
+            "the process by which green plants make their own food using sunlight",
+            result.first { it.front == "What is Photosynthesis?" }.back
+        )
+    }
+
+    @Test
+    fun `a blank line between paragraphs stops the stitch`() {
+        // Two lines that would read as a continuation, but with a paragraph break between them.
+        val separated = PageText(
+            listOf(
+                block(100, "Osmosis is the movement of water across a membrane"),
+                block(260, "made of protein and fat in every living cell.")
+            ),
+            ScriptProfile.Latin
+        )
+
+        assertTrue(
+            "a gap that wide is a new paragraph, whatever the words suggest",
+            cardsFrom(separated).none { it.back.contains("made of protein") }
+        )
+    }
+
+    @Test
+    fun `a block in another column is not stitched on`() {
+        val twoColumn = PageText(
+            listOf(
+                block(100, "Osmosis is the movement of water across a membrane",
+                    left = 60, right = 460),
+                block(140, "made of protein and fat in every living cell.",
+                    left = 540, right = 940)
+            ),
+            ScriptProfile.Latin
+        )
+
+        assertTrue(
+            "vertically adjacent is not enough - it has to be the same column",
+            cardsFrom(twoColumn).none { it.back.contains("made of protein") }
+        )
     }
 
     @Test
@@ -385,5 +465,10 @@ class HeuristicCardGeneratorTest {
 
         assertEquals(1, result.size)
         assertEquals(CardKind.DEFINITION, result.first().kind)
+    }
+
+    private companion object {
+        /** Nominal height of one line of text in the synthetic page layouts above. */
+        const val LINE_HEIGHT = 40
     }
 }

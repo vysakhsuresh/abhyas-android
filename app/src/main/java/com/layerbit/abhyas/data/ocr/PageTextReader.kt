@@ -55,27 +55,28 @@ class PageTextReader {
                 .addOnSuccessListener { result ->
                     // ML Kit hands back blocks of lines laid out on the page. Reading order
                     // *within* a block is dependable; the order of the blocks themselves is not
-                    // - it follows the detector's own grouping, not the page.
-                    //
-                    // Sorting them by where they actually sit is what stops an answer being
-                    // paired with whatever block happened to come back next. Without this, a
-                    // page reading "...the cell. / Q1. Where...? / Ans. ..." produced a card
-                    // asking where photosynthesis happens and answering "the mitochondrion is
-                    // the powerhouse of the cell", because that block was simply next in the
-                    // list.
-                    //
-                    // Top then left, which is right for a single column and no worse than the
-                    // original order for two. Real multi-column handling needs column detection
-                    // and is not attempted here.
+                    // - it follows the detector's own grouping, not the page. So each block
+                    // keeps the box it was found in, and everything downstream reasons about
+                    // the page from those rather than from list position.
                     val blocks = result.textBlocks
+                        .map { block ->
+                            PageBlock(
+                                lines = block.lines.map { it.text.trim() }.filter { it.isNotEmpty() },
+                                box = block.boundingBox?.let {
+                                    TextBox(it.left, it.top, it.right, it.bottom)
+                                }
+                            )
+                        }
+                        .filter { it.lines.isNotEmpty() }
+                        // Top then left: correct for a single column, and no worse than the
+                        // detector's own order for two. Real multi-column pages need column
+                        // detection, which is not attempted here.
                         .sortedWith(
                             compareBy(
-                                { it.boundingBox?.top ?: 0 },
-                                { it.boundingBox?.left ?: 0 }
+                                { it.box?.top ?: Int.MAX_VALUE },
+                                { it.box?.left ?: Int.MAX_VALUE }
                             )
                         )
-                        .map { block -> block.lines.map { it.text.trim() }.filter { it.isNotEmpty() } }
-                        .filter { it.isNotEmpty() }
                     continuation.resume(PageText(blocks, ScriptProfile.of(script)))
                 }
                 .addOnFailureListener { continuation.resumeWithException(it) }
@@ -89,22 +90,21 @@ class PageTextReader {
 }
 
 /**
- * The recognised page, as blocks of lines in reading order, plus the rules of the script it is
- * written in.
+ * The recognised page, plus the rules of the script it is written in.
  *
  * The [profile] is carried on the page rather than passed around separately because every
  * decision downstream - where a sentence ends, what a heading looks like, which word is worth
- * blanking - depends on it, and a page and the wrong profile would fail quietly.
+ * blanking - depends on it, and a page with the wrong profile would fail quietly.
  */
 data class PageText(
-    val blocks: List<List<String>>,
+    val blocks: List<PageBlock>,
     val profile: ScriptProfile = ScriptProfile.Latin
 ) {
 
     val isEmpty: Boolean get() = blocks.isEmpty()
 
     /** Every line, flattened - used for the "here is what was read" preview. */
-    val lines: List<String> get() = blocks.flatten()
+    val lines: List<String> get() = blocks.flatMap { it.lines }
 
     val characterCount: Int get() = lines.sumOf { it.length }
 
@@ -126,40 +126,83 @@ data class PageText(
      * "Q1." as the end of a sentence and throws the fragment away for being too short. Anything
      * that needs those labels has to work on runs instead.
      */
-    fun runs(): List<String> = stitch(blocks.flatMap { runsIn(it) })
+    fun runs(): List<String> = stitchAcrossBlocks().flatMap { it.runs }
+
+    // --------------------------------------------------------------------------------- stitching
+
+    /** A block's runs, kept with its box so the next block can be judged against it. */
+    private class Stitched(val runs: MutableList<String>, val box: TextBox?, val lineCount: Int)
 
     /**
-     * Rejoin runs that a block boundary split in the middle of a sentence.
+     * Rejoin paragraphs that a block boundary split mid-sentence.
      *
-     * Blocks are ML Kit's grouping, not the page's. It routinely breaks one paragraph into two
-     * blocks, and joining only within a block then truncates the sentence: a page reading
-     * "Photosynthesis: the process by which green plants / make their own food using sunlight."
-     * produced a card whose answer stopped at "green plants".
+     * ML Kit's blocks are its own grouping, not the page's: it routinely breaks one paragraph in
+     * two, and joining only within a block truncates the sentence. "Photosynthesis: the process
+     * by which green plants / make their own food using sunlight." produced a card whose answer
+     * stopped at "green plants".
      *
-     * The join is only made on strong evidence - the previous run does not finish a sentence AND
-     * the next one opens with a lower-case letter. A caption or heading never starts lower-case,
-     * so this recovers split paragraphs without welding unrelated blocks together, which is the
-     * failure the per-block rule was there to prevent in the first place.
+     * The first attempt at this joined any two consecutive runs where the text looked like it
+     * continued. That is not enough, and it made things worse: photographing a page on a screen
+     * put "File Edit View" from the window's menu bar next to a continuation line, and the two
+     * were welded into "File _____ View make their own food using sunlight." while the real
+     * sentence stayed truncated.
      *
-     * Skipped entirely for scripts with no letter case, where the signal does not exist.
+     * So the text evidence now has to be backed by the geometry - the next block must sit
+     * directly beneath this one, within about one line's gap, and overlap it horizontally. That
+     * test is independent of what order the blocks arrived in, which is the point: reading order
+     * is the thing that cannot be trusted, so nothing load-bearing should rest on it.
      */
-    private fun stitch(runs: List<String>): List<String> {
-        if (!profile.wordSpaced) return runs
+    private fun stitchAcrossBlocks(): List<Stitched> {
+        val out = mutableListOf<Stitched>()
 
-        val stitched = mutableListOf<String>()
-        runs.forEach { run ->
-            val previous = stitched.lastOrNull()
-            if (previous != null && !endsSentence(previous) && startsLowerCase(run)) {
-                stitched[stitched.lastIndex] = "$previous $run"
+        blocks.forEach { block ->
+            val runs = runsIn(block.lines)
+            if (runs.isEmpty()) return@forEach
+
+            val previous = out.lastOrNull()
+            val previousRun = previous?.runs?.lastOrNull()
+
+            val continues = previousRun != null &&
+                profile.wordSpaced &&
+                !endsSentence(previousRun) &&
+                startsLowerCase(runs.first()) &&
+                sitsDirectlyBelow(previous, block.box)
+
+            if (continues) {
+                previous.runs[previous.runs.lastIndex] = "$previousRun ${runs.first()}"
+                previous.runs += runs.drop(1)
             } else {
-                stitched += run
+                out += Stitched(runs.toMutableList(), block.box, block.lines.size)
             }
         }
-        return stitched
+        return out
+    }
+
+    /**
+     * Whether [box] is the next line or two of [previous], rather than something else on the page.
+     *
+     * Both boxes are required. A missing one means the layout is unknown, and the honest reading
+     * of "unknown" is to leave the blocks separate - a truncated answer is a worse card, but a
+     * sentence welded to a menu bar is a broken one.
+     */
+    private fun sitsDirectlyBelow(previous: Stitched, box: TextBox?): Boolean {
+        val above = previous.box ?: return false
+        val below = box ?: return false
+
+        val lineHeight = (above.height.toFloat() / previous.lineCount.coerceAtLeast(1))
+        if (lineHeight <= 0f) return false
+
+        val gap = above.gapBelow(below)
+        if (gap < -lineHeight) return false                       // overlapping or above
+        if (gap > lineHeight * MAX_GAP_IN_LINES) return false     // a paragraph break or further
+
+        return above.horizontalOverlapWith(below) >= MIN_HORIZONTAL_OVERLAP
     }
 
     private fun startsLowerCase(text: String): Boolean =
         text.firstOrNull()?.isLowerCase() == true
+
+    // ------------------------------------------------------------------------ within one block
 
     /** Split one run into sentences, dropping fragments too short to make a card out of. */
     fun sentencesOf(run: String): List<String> = splitIntoSentences(run)
@@ -176,14 +219,14 @@ data class PageText(
      *
      * Anything else starts a new run, which is how headings and bullet items stay separate.
      */
-    private fun runsIn(block: List<String>): List<String> {
+    private fun runsIn(blockLines: List<String>): List<String> {
         val runs = mutableListOf<String>()
         val current = StringBuilder()
         // CJK does not put spaces between words, so inserting one at every wrapped line would
         // leave a gap in the middle of a word that was never broken in the first place.
         val joiner = if (profile.wordSpaced) " " else ""
 
-        for (line in block) {
+        for (line in blockLines) {
             if (current.isEmpty()) {
                 current.append(line)
                 continue
@@ -223,8 +266,28 @@ data class PageText(
     private fun splitIntoSentences(run: String): List<String> =
         profile.sentenceBoundary.split(run).filter { it.isNotBlank() }
 
-    private companion object {
+    companion object {
+        /**
+         * Build a page from bare lines, with no layout information.
+         *
+         * A factory rather than a second constructor: both would erase to `List` on the JVM and
+         * clash. Blocks made this way have no box, so they are never stitched together - which
+         * is the correct reading of "the layout is unknown".
+         */
+        fun ofLines(lines: List<List<String>>, profile: ScriptProfile = ScriptProfile.Latin) =
+            PageText(lines.map { PageBlock(it) }, profile)
+
         /** Bullet and list markers, which look the same in every script this app supports. */
         val BULLET = Regex("""^\s*([-*•●■]|\(?\d{1,2}[.)]|[a-z][.)])\s+""")
+
+        /**
+         * How far below a block the next one may start and still be the same paragraph, measured
+         * in line heights. Just over one allows for the slack in OCR boxes; much more would let a
+         * blank line through, and a blank line is exactly where a paragraph ends.
+         */
+        const val MAX_GAP_IN_LINES = 1.2f
+
+        /** How much of the narrower block must sit under the other to count as the same column. */
+        const val MIN_HORIZONTAL_OVERLAP = 0.5f
     }
 }
