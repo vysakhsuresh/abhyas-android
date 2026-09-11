@@ -79,8 +79,21 @@ class HeuristicCardGenerator : CardGenerator {
             val questionText = run.removeRange(question.range).trim()
             if (questionText.length < profile.minQuestionChars) return@forEachIndexed
 
-            val following = runs.getOrNull(index + 1) ?: return@forEachIndexed
+            // Look for an explicitly labelled answer first, over a short window rather than
+            // only the very next run. OCR does not guarantee reading order, so an "Ans." can
+            // arrive a run later than it appears on the page - and pairing a question with
+            // whatever came back next produced a card asking where photosynthesis happens and
+            // answering "the mitochondrion is the powerhouse of the cell".
+            val labelledAt = (index + 1..index + ANSWER_LOOKAHEAD)
+                .firstOrNull { at ->
+                    val candidate = runs.getOrNull(at) ?: return@firstOrNull false
+                    at !in consumed && profile.answerPrefix.containsMatchIn(candidate)
+                }
+
+            val answerAt = labelledAt ?: (index + 1)
+            val following = runs.getOrNull(answerAt) ?: return@forEachIndexed
             val labelled = profile.answerPrefix.find(following)
+
             val answerText = if (labelled != null) {
                 following.removeRange(labelled.range).trim()
             } else {
@@ -88,8 +101,10 @@ class HeuristicCardGenerator : CardGenerator {
                 // label. A numbered line on its own ("3. Mitosis") is far more often a list item
                 // than a question, and guessing wrong there produces nonsense with high
                 // confidence - the worst combination available.
-                if (looksLikeQuestionLabel(question.value)) following.trim()
-                else return@forEachIndexed
+                if (!looksLikeQuestionLabel(question.value)) return@forEachIndexed
+                // ...and never when that run is plainly the next question rather than an answer.
+                if (profile.questionPrefix.containsMatchIn(following)) return@forEachIndexed
+                following.trim()
             }
             if (answerText.length < profile.minAnswerChars) return@forEachIndexed
 
@@ -101,7 +116,7 @@ class HeuristicCardGenerator : CardGenerator {
                 confidence = if (labelled != null) 0.98f else 0.90f
             )
             consumed += index
-            consumed += index + 1
+            consumed += answerAt
         }
         return QaPass(out, consumed)
     }
@@ -169,8 +184,16 @@ class HeuristicCardGenerator : CardGenerator {
 
         if (profile.units(subject) !in 1..profile.maxTermUnits) return null
         if (predicate.length < profile.minAnswerChars) return null
+
+        val lowered = subject.lowercase()
         // "It is...", "This is...", "There are..." define nothing without their antecedent.
-        if (subject.lowercase().startsWithAny(profile.pronounStarts)) return null
+        if (lowered.startsWithAny(profile.pronounStarts)) return null
+        // "If that bites, X is..." states a condition, not a definition.
+        if (lowered.startsWithAny(profile.subordinatorStarts)) return null
+        // A subject that still carries a comma is a clause, not a term.
+        if (subject.contains(',')) return null
+        // "The generator is..." expects the reader to know which generator already.
+        if (isDefiniteGeneric(lowered, profile)) return null
 
         val verb = match.value.trim().lowercase()
         return CardCandidate(
@@ -245,6 +268,13 @@ class HeuristicCardGenerator : CardGenerator {
 
     // ----------------------------------------------------------------------------------- helpers
 
+    /** "The <generic noun>" - a reference back to something, not a definable term. */
+    private fun isDefiniteGeneric(lowered: String, profile: ScriptProfile): Boolean {
+        if (!lowered.startsWith("the ")) return false
+        val rest = lowered.removePrefix("the ").trim()
+        return rest.isNotEmpty() && rest.split(' ').size == 1 && rest in profile.genericNouns
+    }
+
     private fun String.countOccurrences(needle: String): Int = split(needle).size - 1
 
     private fun String.startsWithAny(prefixes: List<String>): Boolean =
@@ -259,6 +289,13 @@ class HeuristicCardGenerator : CardGenerator {
 
     private companion object {
         const val MAX_CARDS_PER_PAGE = 12
+
+        /**
+         * How far past a question to look for a labelled answer. Small on purpose: far enough to
+         * survive one stray run landing between them, short enough that it can never reach into
+         * the next exercise and steal its answer.
+         */
+        const val ANSWER_LOOKAHEAD = 3
         const val BLANK = "_____"
 
         /** ASCII and fullwidth colons both introduce a definition. */

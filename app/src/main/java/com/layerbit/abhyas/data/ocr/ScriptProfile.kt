@@ -47,6 +47,19 @@ sealed class ScriptProfile(val script: ScriptOption) {
     /** Sentence openers that define nothing without their antecedent. */
     open val pronounStarts: List<String> = emptyList()
 
+    /**
+     * Words that open a subordinate clause. A sentence starting with one states a condition
+     * before it states anything else, so its grammatical subject is not the thing being defined.
+     */
+    open val subordinatorStarts: List<String> = emptyList()
+
+    /**
+     * Nouns too generic to define on their own. Only consulted for a subject of the form
+     * "The <noun>", where the definite article means the reader is expected to already know
+     * which one - and a card asking about it out of context is unanswerable.
+     */
+    open val genericNouns: Set<String> = emptySet()
+
     /** Words never worth blanking out in a cloze. */
     open val stopwords: Set<String> = emptySet()
 
@@ -131,6 +144,34 @@ sealed class ScriptProfile(val script: ScriptOption) {
         override val pronounStarts = listOf(
             "it", "this", "that", "they", "these", "those", "there", "he", "she", "we", "you",
             "which", "who", "what", "here"
+        )
+
+        /**
+         * A sentence opening with one of these is a condition or an aside, not a definition.
+         * "If that bites, document-boundary detection is the obvious next feature" inverts into
+         * "What is If that bites, document-boundary detection?" - a question nobody could answer.
+         */
+        override val subordinatorStarts = listOf(
+            "if", "when", "while", "although", "though", "because", "since", "unless",
+            "after", "before", "until", "whereas", "whenever", "wherever", "as", "once",
+            "given", "assuming", "provided", "suppose", "supposing"
+        )
+
+        /**
+         * "The generator is heuristic" is a sentence about a thing already introduced, not a
+         * definition of it - the reader has to know which generator before the question means
+         * anything. "The" plus a generic noun is the giveaway; "The mitochondrion is..." is
+         * fine, because the noun carries the meaning on its own.
+         */
+        override val genericNouns = setOf(
+            "generator", "process", "system", "method", "result", "results", "value", "values",
+            "app", "application", "program", "code", "file", "files", "user", "users", "page",
+            "pages", "way", "ways", "thing", "things", "part", "parts", "idea", "ideas",
+            "answer", "answers", "question", "questions", "point", "points", "reason", "reasons",
+            "problem", "problems", "issue", "issues", "case", "cases", "example", "examples",
+            "number", "numbers", "amount", "rest", "whole", "purpose", "goal", "aim", "cost",
+            "difference", "change", "changes", "effect", "effects", "term", "terms", "word",
+            "words", "name", "names", "list", "lists", "set", "sets", "group", "groups"
         )
 
         override val stopwords = setOf(

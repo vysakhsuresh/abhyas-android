@@ -267,6 +267,98 @@ class HeuristicCardGeneratorTest {
         )
     }
 
+    // ------------------------------------------------ regressions from a real photographed page
+
+    /**
+     * The notepad page from the first real test on a phone, with the blocks in the order ML Kit
+     * actually returned them: each line its own block, and the mitochondrion line landing
+     * between the question and its answer.
+     *
+     * PageTextReader now sorts blocks by position before this point, but the generator is tested
+     * against the unsorted order on purpose - OCR reading order is never a guarantee, and these
+     * cards have to come out right either way.
+     */
+    private val photographedPage = listOf(
+        listOf("Photosynthesis: the process by which green plants"),
+        listOf("make their own food using sunlight."),
+        listOf("Chlorophyll: the green pigment found in leaves."),
+        listOf("Q1. Where does photosynthesis take place?"),
+        listOf("The mitochondrion is the powerhouse of the cell."),
+        listOf("Ans. In the chloroplasts of the leaf cells.")
+    )
+
+    @Test
+    fun `a question is paired with its labelled answer, not with whatever block came next`() {
+        // Shipped bug: this card asked where photosynthesis takes place and answered "The
+        // mitochondrion is the powerhouse of the cell", because that block was next in the list.
+        val qa = cards(photographedPage, ScriptProfile.Latin)
+            .first { it.kind == CardKind.QA }
+
+        assertEquals("Where does photosynthesis take place?", qa.front)
+        assertEquals("In the chloroplasts of the leaf cells.", qa.back)
+    }
+
+    @Test
+    fun `a paragraph split across blocks is rejoined before it is turned into a card`() {
+        // Shipped bug: the answer stopped at "green plants" because the rest of the sentence was
+        // in a different ML Kit block and joining never crossed one.
+        val definition = cards(photographedPage, ScriptProfile.Latin)
+            .first { it.front == "What is Photosynthesis?" }
+
+        assertEquals(
+            "the process by which green plants make their own food using sunlight",
+            definition.back
+        )
+    }
+
+    @Test
+    fun `a line stolen as a wrong answer is still available as its own card`() {
+        // The mitochondrion line was consumed as a bogus answer, so its own good card vanished.
+        val mitochondrion = cards(photographedPage, ScriptProfile.Latin)
+            .firstOrNull { it.front == "What is The mitochondrion?" }
+
+        assertNotNull("the page defines it, so it should be offered", mitochondrion)
+        assertEquals("the powerhouse of the cell", mitochondrion!!.back)
+    }
+
+    @Test
+    fun `a subordinate clause is not a definition`() {
+        // "If that bites, document-boundary detection is the obvious next feature" became
+        // "What is If that bites, document-boundary detection?".
+        val result = cards(
+            listOf(listOf("If that bites, document-boundary detection is the obvious next feature.")),
+            ScriptProfile.Latin
+        )
+
+        assertTrue(
+            "a condition is not a definition",
+            result.none { it.kind == CardKind.DEFINITION }
+        )
+    }
+
+    @Test
+    fun `The plus a generic noun is not a definable term`() {
+        // "The generator is heuristic, so tell me..." became "What is The generator?" - the
+        // reader has to already know which generator for the question to mean anything.
+        val result = cards(
+            listOf(listOf("The generator is heuristic and runs entirely on the device.")),
+            ScriptProfile.Latin
+        )
+
+        assertNull(result.withFront("What is The generator?"))
+    }
+
+    @Test
+    fun `a real noun behind The is still definable`() {
+        // The guard above must not swallow "The mitochondrion is the powerhouse of the cell."
+        val result = cards(
+            listOf(listOf("The mitochondrion is the powerhouse of the cell.")),
+            ScriptProfile.Latin
+        )
+
+        assertNotNull(result.withFront("What is The mitochondrion?"))
+    }
+
     // ------------------------------------------------------------------------------------ shared
 
     @Test

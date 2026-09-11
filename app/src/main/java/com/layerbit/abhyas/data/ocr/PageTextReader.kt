@@ -54,10 +54,26 @@ class PageTextReader {
             recognizerFor(script).process(image)
                 .addOnSuccessListener { result ->
                     // ML Kit hands back blocks of lines laid out on the page. Reading order
-                    // within a block is dependable; across blocks it is not, so blocks stay
-                    // separate and sentence joining never runs across a block boundary. That is
-                    // what stops a caption being welded onto the end of a paragraph.
+                    // *within* a block is dependable; the order of the blocks themselves is not
+                    // - it follows the detector's own grouping, not the page.
+                    //
+                    // Sorting them by where they actually sit is what stops an answer being
+                    // paired with whatever block happened to come back next. Without this, a
+                    // page reading "...the cell. / Q1. Where...? / Ans. ..." produced a card
+                    // asking where photosynthesis happens and answering "the mitochondrion is
+                    // the powerhouse of the cell", because that block was simply next in the
+                    // list.
+                    //
+                    // Top then left, which is right for a single column and no worse than the
+                    // original order for two. Real multi-column handling needs column detection
+                    // and is not attempted here.
                     val blocks = result.textBlocks
+                        .sortedWith(
+                            compareBy(
+                                { it.boundingBox?.top ?: 0 },
+                                { it.boundingBox?.left ?: 0 }
+                            )
+                        )
                         .map { block -> block.lines.map { it.text.trim() }.filter { it.isNotEmpty() } }
                         .filter { it.isNotEmpty() }
                     continuation.resume(PageText(blocks, ScriptProfile.of(script)))
@@ -110,7 +126,40 @@ data class PageText(
      * "Q1." as the end of a sentence and throws the fragment away for being too short. Anything
      * that needs those labels has to work on runs instead.
      */
-    fun runs(): List<String> = blocks.flatMap { runsIn(it) }
+    fun runs(): List<String> = stitch(blocks.flatMap { runsIn(it) })
+
+    /**
+     * Rejoin runs that a block boundary split in the middle of a sentence.
+     *
+     * Blocks are ML Kit's grouping, not the page's. It routinely breaks one paragraph into two
+     * blocks, and joining only within a block then truncates the sentence: a page reading
+     * "Photosynthesis: the process by which green plants / make their own food using sunlight."
+     * produced a card whose answer stopped at "green plants".
+     *
+     * The join is only made on strong evidence - the previous run does not finish a sentence AND
+     * the next one opens with a lower-case letter. A caption or heading never starts lower-case,
+     * so this recovers split paragraphs without welding unrelated blocks together, which is the
+     * failure the per-block rule was there to prevent in the first place.
+     *
+     * Skipped entirely for scripts with no letter case, where the signal does not exist.
+     */
+    private fun stitch(runs: List<String>): List<String> {
+        if (!profile.wordSpaced) return runs
+
+        val stitched = mutableListOf<String>()
+        runs.forEach { run ->
+            val previous = stitched.lastOrNull()
+            if (previous != null && !endsSentence(previous) && startsLowerCase(run)) {
+                stitched[stitched.lastIndex] = "$previous $run"
+            } else {
+                stitched += run
+            }
+        }
+        return stitched
+    }
+
+    private fun startsLowerCase(text: String): Boolean =
+        text.firstOrNull()?.isLowerCase() == true
 
     /** Split one run into sentences, dropping fragments too short to make a card out of. */
     fun sentencesOf(run: String): List<String> = splitIntoSentences(run)
