@@ -1,14 +1,22 @@
 package com.layerbit.abhyas.data.generate
 
 import com.layerbit.abhyas.data.ocr.PageText
+import com.layerbit.abhyas.data.ocr.ScriptProfile
 
 /**
  * Writes cards from a page without a language model.
  *
- * The four passes below run in descending order of how much the page told us. An explicit "Q./A."
- * pair is the page handing over a finished card; a definition is the page stating a fact in a
- * shape we can invert; a cloze is us guessing which word mattered. Everything is scored so the
- * confident suggestions sort to the top of the review screen.
+ * The passes below run in descending order of how much the page told us. An explicit "Q./A." pair
+ * is the page handing over a finished card; a definition is the page stating a fact in a shape we
+ * can invert; a cloze is us guessing which word mattered. Everything is scored so the confident
+ * suggestions sort to the top of the review screen.
+ *
+ * Every language-specific rule - where a sentence ends, which verbs define, how to word the
+ * question, which word is worth blanking - comes from the page's [ScriptProfile] rather than
+ * being written in here. That is what lets the same passes serve English, Hindi and CJK, and it
+ * is also why a script can support only some of them: [ScriptProfile.copula] is null for Hindi
+ * because its verb sits at the end of the clause, and [ScriptProfile.salientTerm] is null for CJK
+ * because whitespace does not mark word boundaries there.
  *
  * The deliberate bias is towards **fewer, better** cards. A student who sees six good suggestions
  * accepts them all; one who sees forty mediocre ones closes the app. So every pass refuses more
@@ -17,6 +25,7 @@ import com.layerbit.abhyas.data.ocr.PageText
 class HeuristicCardGenerator : CardGenerator {
 
     override suspend fun generate(page: PageText): List<CardCandidate> {
+        val profile = page.profile
         val runs = page.runs()
         if (runs.isEmpty()) return emptyList()
 
@@ -24,15 +33,15 @@ class HeuristicCardGenerator : CardGenerator {
         // "Ans." labels it keys off - splitting reads the stop in "Q1." as a sentence end and
         // discards the fragment. The runs it consumes are then withheld from the later passes so
         // one worked exercise cannot also come back as a mangled cloze of its own question.
-        val qa = explicitQa(runs)
+        val qa = explicitQa(runs, profile)
         val sentences = runs
             .filterIndexed { index, _ -> index !in qa.consumedRuns }
             .flatMap { page.sentencesOf(it) }
 
         val candidates = buildList {
             addAll(qa.candidates)
-            addAll(definitions(sentences))
-            addAll(clozes(sentences))
+            addAll(definitions(sentences, profile))
+            addAll(clozes(sentences, profile))
         }
 
         // Two passes can describe the same sentence - a colon definition is often also a fine
@@ -58,7 +67,7 @@ class HeuristicCardGenerator : CardGenerator {
      * The page already had questions on it - a worked exercise, or a textbook's end-of-chapter
      * list. Nothing has to be inferred, so these score highest of anything here.
      */
-    private fun explicitQa(runs: List<String>): QaPass {
+    private fun explicitQa(runs: List<String>, profile: ScriptProfile): QaPass {
         val out = mutableListOf<CardCandidate>()
         val consumed = mutableSetOf<Int>()
 
@@ -66,25 +75,26 @@ class HeuristicCardGenerator : CardGenerator {
             // A run already claimed as somebody's answer is not also the next question.
             if (index in consumed) return@forEachIndexed
 
-            val question = QUESTION_PREFIX.find(run) ?: return@forEachIndexed
+            val question = profile.questionPrefix.find(run) ?: return@forEachIndexed
             val questionText = run.removeRange(question.range).trim()
-            if (questionText.length < MIN_QUESTION_LENGTH) return@forEachIndexed
+            if (questionText.length < profile.minQuestionChars) return@forEachIndexed
 
             val following = runs.getOrNull(index + 1) ?: return@forEachIndexed
-            val labelled = ANSWER_PREFIX.find(following)
+            val labelled = profile.answerPrefix.find(following)
             val answerText = if (labelled != null) {
                 following.removeRange(labelled.range).trim()
             } else {
-                // An unlabelled next run is only taken when the question carried a "Q" label.
-                // A numbered line on its own ("3. Mitosis") is far more often a list item than a
-                // question, and guessing wrong there produces nonsense with high confidence.
-                if (question.value.trimStart().startsWith("Q", ignoreCase = true)) following.trim()
+                // An unlabelled next run is only taken when the question carried a real question
+                // label. A numbered line on its own ("3. Mitosis") is far more often a list item
+                // than a question, and guessing wrong there produces nonsense with high
+                // confidence - the worst combination available.
+                if (looksLikeQuestionLabel(question.value)) following.trim()
                 else return@forEachIndexed
             }
-            if (answerText.length < MIN_ANSWER_LENGTH) return@forEachIndexed
+            if (answerText.length < profile.minAnswerChars) return@forEachIndexed
 
             out += CardCandidate(
-                front = questionText.ensureQuestionMark(),
+                front = questionText.ensureQuestionMark(profile),
                 back = answerText,
                 sourceText = "$run $following".trim(),
                 kind = CardKind.QA,
@@ -96,10 +106,20 @@ class HeuristicCardGenerator : CardGenerator {
         return QaPass(out, consumed)
     }
 
+    /** A "Q", or the word for question in one of the supported scripts - not a bare number. */
+    private fun looksLikeQuestionLabel(label: String): Boolean {
+        val trimmed = label.trimStart()
+        return QUESTION_WORDS.any { trimmed.startsWith(it, ignoreCase = true) }
+    }
+
     // ------------------------------------------------------------------------------ definitions
 
-    private fun definitions(sentences: List<String>): List<CardCandidate> =
-        sentences.mapNotNull { colonDefinition(it) ?: copulaDefinition(it) }
+    private fun definitions(sentences: List<String>, profile: ScriptProfile): List<CardCandidate> =
+        sentences.mapNotNull {
+            colonDefinition(it, profile)
+                ?: copulaDefinition(it, profile)
+                ?: meansDefinition(it, profile)
+        }
 
     /**
      * "Photosynthesis: the process by which green plants make food."
@@ -107,20 +127,25 @@ class HeuristicCardGenerator : CardGenerator {
      * The guard that matters is the length of the left-hand side. Prose is full of colons -
      * "There are three reasons:" - and only a short, term-shaped left side is actually a
      * definition rather than a lead-in.
+     *
+     * This is the one pass that works in every script, which is what carries Hindi and CJK.
      */
-    private fun colonDefinition(sentence: String): CardCandidate? {
-        val colon = sentence.indexOf(':').takeIf { it > 0 } ?: return null
+    private fun colonDefinition(sentence: String, profile: ScriptProfile): CardCandidate? {
+        val colon = sentence.indexOfFirst { it in COLONS }.takeIf { it > 0 } ?: return null
         val term = sentence.take(colon).trim()
         val definition = sentence.drop(colon + 1).trim().trimEnd('.')
 
-        if (term.wordCount() !in 1..MAX_TERM_WORDS) return null
-        if (definition.length < MIN_ANSWER_LENGTH) return null
+        if (term.isEmpty()) return null
+        // "Chapter 4: Photosynthesis" is a title that happens to contain a colon.
+        if (profile.headingPrefix?.containsMatchIn(term) == true) return null
+        if (profile.units(term) !in 1..profile.maxTermUnits) return null
+        if (definition.length < profile.minAnswerChars) return null
         // "There are three reasons: ..." - a left side that is a sentence, not a term.
-        if (term.lowercase().startsWithAny(LEAD_IN_STARTS)) return null
+        if (term.lowercase().startsWithAny(profile.leadInStarts)) return null
         if (term.last() in ",;") return null
 
         return CardCandidate(
-            front = term.asDefinitionQuestion(),
+            front = profile.definitionQuestion(term),
             back = definition,
             sourceText = sentence,
             kind = CardKind.DEFINITION,
@@ -133,21 +158,23 @@ class HeuristicCardGenerator : CardGenerator {
      *
      * Inverting a copula only works when the subject is a short noun phrase at the very start of
      * the sentence. Anything longer is a claim about something, not a definition of it, and turns
-     * into a question nobody could answer.
+     * into a question nobody could answer. Skipped entirely for scripts whose grammar does not
+     * put the verb between the two halves.
      */
-    private fun copulaDefinition(sentence: String): CardCandidate? {
-        val match = COPULA.find(sentence) ?: return null
+    private fun copulaDefinition(sentence: String, profile: ScriptProfile): CardCandidate? {
+        val copula = profile.copula ?: return null
+        val match = copula.find(sentence) ?: return null
         val subject = sentence.take(match.range.first).trim().trimStart('.', ',')
         val predicate = sentence.drop(match.range.last + 1).trim().trimEnd('.')
 
-        if (subject.wordCount() !in 1..MAX_TERM_WORDS) return null
-        if (predicate.length < MIN_ANSWER_LENGTH) return null
+        if (profile.units(subject) !in 1..profile.maxTermUnits) return null
+        if (predicate.length < profile.minAnswerChars) return null
         // "It is...", "This is...", "There are..." define nothing without their antecedent.
-        if (subject.lowercase().startsWithAny(PRONOUN_STARTS)) return null
+        if (subject.lowercase().startsWithAny(profile.pronounStarts)) return null
 
         val verb = match.value.trim().lowercase()
         return CardCandidate(
-            front = subject.asDefinitionQuestion(plural = verb.startsWith("are")),
+            front = profile.definitionQuestion(subject, plural = verb.startsWith("are")),
             back = predicate,
             sourceText = sentence,
             // Lower than a colon definition: the colon was the author being explicit, whereas
@@ -157,21 +184,50 @@ class HeuristicCardGenerator : CardGenerator {
         )
     }
 
+    /**
+     * Hindi's "X ka arth hai Y" - X means Y.
+     *
+     * General copula inversion is off for Devanagari because Hindi puts its verb at the end of
+     * the clause, so the Latin trick would put the whole definition on the left and nothing on
+     * the right. This fixed phrase is the exception worth special-casing: it is unambiguous, the
+     * definition genuinely follows it, and it is very common in textbook prose.
+     */
+    private fun meansDefinition(sentence: String, profile: ScriptProfile): CardCandidate? {
+        if (profile !is ScriptProfile.Devanagari) return null
+        val match = ScriptProfile.Devanagari.meansPattern.find(sentence) ?: return null
+
+        val term = sentence.take(match.range.first).trim()
+        val meaning = sentence.drop(match.range.last + 1).trim().trimEnd('.')
+
+        if (profile.units(term) !in 1..profile.maxTermUnits) return null
+        if (meaning.length < profile.minAnswerChars) return null
+        if (term.startsWithAny(profile.pronounStarts)) return null
+
+        return CardCandidate(
+            front = profile.definitionQuestion(term),
+            back = meaning,
+            sourceText = sentence,
+            kind = CardKind.DEFINITION,
+            confidence = 0.80f
+        )
+    }
+
     // ----------------------------------------------------------------------------------- clozes
 
     /**
      * Blank out the one value in a sentence most likely to be the thing worth remembering.
      *
-     * Dates and figures first, because a sentence that contains one is almost always *about* it.
-     * Otherwise the most distinctive term - a mid-sentence capitalised word, which after OCR is
-     * the best available proxy for a proper noun or a technical term.
+     * Dates and figures first, because a sentence that contains one is almost always *about* it,
+     * and because digits look the same in every script here. Otherwise whatever the script's own
+     * [ScriptProfile.salientTerm] picks - which is nothing at all for CJK, where choosing a term
+     * would mean guessing at word boundaries that whitespace does not mark.
      */
-    private fun clozes(sentences: List<String>): List<CardCandidate> =
+    private fun clozes(sentences: List<String>, profile: ScriptProfile): List<CardCandidate> =
         sentences.mapNotNull { sentence ->
-            if (sentence.wordCount() !in MIN_CLOZE_WORDS..MAX_CLOZE_WORDS) return@mapNotNull null
+            if (profile.units(sentence) !in profile.clozeRange) return@mapNotNull null
 
             val target = NUMERIC.find(sentence)?.let { it.value to 0.68f }
-                ?: salientTerm(sentence)?.let { it to 0.55f }
+                ?: profile.salientTerm(sentence)?.let { it to 0.55f }
                 ?: return@mapNotNull null
 
             val (term, confidence) = target
@@ -187,107 +243,36 @@ class HeuristicCardGenerator : CardGenerator {
             )
         }
 
-    /**
-     * The most distinctive word in the sentence: capitalised but not sentence-initial, not a
-     * stopword, and long enough to be worth recalling. Ties break towards the longer word, which
-     * is a crude but effective stand-in for "more technical".
-     */
-    private fun salientTerm(sentence: String): String? =
-        sentence.split(WHITESPACE)
-            .drop(1) // the first word is capitalised because it starts the sentence
-            .map { it.trim { c -> !c.isLetterOrDigit() } }
-            .filter { it.length >= MIN_TERM_LENGTH }
-            .filter { it.first().isUpperCase() }
-            .filterNot { it.lowercase() in STOPWORDS }
-            .maxByOrNull { it.length }
-
     // ----------------------------------------------------------------------------------- helpers
 
-    private fun String.wordCount(): Int = split(WHITESPACE).count { it.isNotBlank() }
-
-    private fun String.countOccurrences(needle: String): Int =
-        split(needle).size - 1
+    private fun String.countOccurrences(needle: String): Int = split(needle).size - 1
 
     private fun String.startsWithAny(prefixes: List<String>): Boolean =
         prefixes.any { this == it || startsWith("$it ") }
 
-    private fun String.ensureQuestionMark(): String =
-        if (endsWith("?")) this else "$this?"
-
-    /**
-     * Turn a term into the question that asks for it.
-     *
-     * [plural] is the sentence's own verb when there was one ("Stomata **are**"), and that beats
-     * any amount of guessing from the noun - it is what stops "Photosynthesis is..." becoming
-     * "What are Photosynthesis?". Only a colon definition, which has no verb to read, falls back
-     * to the suffix test, and that test has to exclude the endings that merely look plural:
-     * -sis, -is, -us, -ss and -ous all end in s without being one.
-     */
-    private fun String.asDefinitionQuestion(plural: Boolean? = null): String {
-        val looksPlural = plural
-            ?: (endsWith("s") && NOT_ACTUALLY_PLURAL.none { lowercase().endsWith(it) })
-        return if (looksPlural) "What are $this?" else "What is $this?"
+    /** Add the script's own question mark, if the text does not already end in one. */
+    private fun String.ensureQuestionMark(profile: ScriptProfile): String {
+        val last = trimEnd().lastOrNull()
+        if (last != null && last in QUESTION_MARKS) return this
+        return this + if (profile.wordSpaced) "?" else "？"
     }
 
     private companion object {
         const val MAX_CARDS_PER_PAGE = 12
-        const val MAX_TERM_WORDS = 6
-        const val MIN_ANSWER_LENGTH = 15
-        const val MIN_QUESTION_LENGTH = 10
-        const val MIN_TERM_LENGTH = 4
-        const val MIN_CLOZE_WORDS = 6
-        const val MAX_CLOZE_WORDS = 34
         const val BLANK = "_____"
 
-        val WHITESPACE = Regex("""\s+""")
+        /** ASCII and fullwidth colons both introduce a definition. */
+        const val COLONS = ":：﹕"
+        const val QUESTION_MARKS = "?？"
 
-        /** "Q.", "Q:", "Q1)", "1." at the start of a line, or any sentence ending in "?". */
-        val QUESTION_PREFIX = Regex("""^\s*(Q\s*\d*\s*[.):]|\d{1,2}\s*[.)])\s*""", RegexOption.IGNORE_CASE)
-        val ANSWER_PREFIX = Regex("""^\s*(A\s*\d*\s*[.):]|Ans\.?\s*[:.]?)\s*""", RegexOption.IGNORE_CASE)
-
-        /**
-         * The copulas worth inverting. Ordered longest-first so "is defined as" wins over the
-         * bare "is" that sits inside it - Regex alternation is first-match, not longest-match,
-         * and getting this backwards silently truncates every definition to the word "defined".
-         */
-        val COPULA = Regex(
-            """\s+(is defined as|are defined as|is known as|are known as|is called|are called|refers to|refer to|means|is|are)\s+"""
-        )
+        /** Labels that genuinely mean "a question follows", across the supported scripts. */
+        val QUESTION_WORDS = listOf("Q", "प्रश्न", "प्र", "問", "问", "문제")
 
         /**
-         * "was" and "were" are deliberately absent. Past tense is narrative, not definitional -
-         * "The process was first described by Jan Ingenhousz in 1779" is a fact about a thing,
-         * not a definition of it, and inverting it yields the useless "What is The process?".
-         * Sentences like that fall through to the cloze pass instead, which blanks the date and
-         * produces the card actually worth studying.
+         * A year, or any figure with a unit or percentage attached. Digits are written the same
+         * way in every script Abhyas supports, so this one pattern is genuinely universal - which
+         * is exactly why it is the fallback that keeps CJK clozes working at all.
          */
-        val NOT_ACTUALLY_PLURAL = listOf("ss", "us", "is", "sis", "ous")
-
-        /** A year, or any figure with a unit or percentage attached. */
         val NUMERIC = Regex("""\b(1[0-9]{3}|20[0-9]{2})\b|\b\d+(\.\d+)?\s?%|\b\d+(\.\d+)?\s?[a-zA-Z]{1,4}\b""")
-
-        val LEAD_IN_STARTS = listOf(
-            "there", "these", "those", "the following", "following", "note", "example",
-            "examples", "for example", "steps", "reasons", "types", "kinds"
-        )
-
-        val PRONOUN_STARTS = listOf(
-            "it", "this", "that", "they", "these", "those", "there", "he", "she", "we", "you",
-            "which", "who", "what", "here"
-        )
-
-        /**
-         * Capitalised words that carry no meaning worth testing. Deliberately short - the goal is
-         * to skip sentence connectives and honorifics, not to filter vocabulary.
-         */
-        val STOPWORDS = setOf(
-            "the", "this", "that", "these", "those", "there", "then", "thus", "hence",
-            "however", "therefore", "moreover", "although", "because", "since", "while",
-            "when", "where", "which", "what", "who", "whom", "whose", "with", "without",
-            "from", "into", "onto", "upon", "about", "after", "before", "during", "under",
-            "over", "between", "among", "also", "such", "some", "many", "most", "more",
-            "less", "than", "they", "them", "their", "have", "has", "had", "been", "being",
-            "mr", "mrs", "dr", "prof", "fig", "figure", "table", "chapter", "page", "note"
-        )
     }
 }

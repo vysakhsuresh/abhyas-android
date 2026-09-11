@@ -5,31 +5,53 @@ import android.graphics.Bitmap
 import android.net.Uri
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.TextRecognizer
+import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
+import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions
+import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
+import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import java.util.EnumMap
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
- * Reads the text off a photographed page.
+ * Reads the text off a photographed page, in whichever script the deck is written in.
  *
- * Uses ML Kit's **bundled** Latin recogniser - the model ships inside the APK, so this works with
- * no network and no Play Services model download. See the AndroidManifest comment for why that is
- * not negotiable.
+ * Every recogniser here is the **bundled** build - the models ship inside the APK, so this works
+ * with no network and no Play Services model download. See the AndroidManifest comment for why
+ * that is not negotiable, and the README for what it costs in APK size.
+ *
+ * Recognisers are created on demand and cached, because each one allocates a native model and
+ * most users will only ever touch one of them.
  */
 class PageTextReader {
 
-    private val recognizer = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    private val recognizers = EnumMap<ScriptOption, TextRecognizer>(ScriptOption::class.java)
 
-    suspend fun read(context: Context, uri: Uri): PageText =
-        recognise(InputImage.fromFilePath(context, uri))
+    private fun recognizerFor(script: ScriptOption): TextRecognizer =
+        recognizers.getOrPut(script) {
+            TextRecognition.getClient(
+                when (script) {
+                    ScriptOption.LATIN -> TextRecognizerOptions.DEFAULT_OPTIONS
+                    ScriptOption.DEVANAGARI -> DevanagariTextRecognizerOptions.Builder().build()
+                    ScriptOption.CHINESE -> ChineseTextRecognizerOptions.Builder().build()
+                    ScriptOption.JAPANESE -> JapaneseTextRecognizerOptions.Builder().build()
+                    ScriptOption.KOREAN -> KoreanTextRecognizerOptions.Builder().build()
+                }
+            )
+        }
 
-    suspend fun read(bitmap: Bitmap): PageText =
-        recognise(InputImage.fromBitmap(bitmap, 0))
+    suspend fun read(context: Context, uri: Uri, script: ScriptOption): PageText =
+        recognise(InputImage.fromFilePath(context, uri), script)
 
-    private suspend fun recognise(image: InputImage): PageText =
+    suspend fun read(bitmap: Bitmap, script: ScriptOption): PageText =
+        recognise(InputImage.fromBitmap(bitmap, 0), script)
+
+    private suspend fun recognise(image: InputImage, script: ScriptOption): PageText =
         suspendCancellableCoroutine { continuation ->
-            recognizer.process(image)
+            recognizerFor(script).process(image)
                 .addOnSuccessListener { result ->
                     // ML Kit hands back blocks of lines laid out on the page. Reading order
                     // within a block is dependable; across blocks it is not, so blocks stay
@@ -38,17 +60,30 @@ class PageTextReader {
                     val blocks = result.textBlocks
                         .map { block -> block.lines.map { it.text.trim() }.filter { it.isNotEmpty() } }
                         .filter { it.isNotEmpty() }
-                    continuation.resume(PageText(blocks))
+                    continuation.resume(PageText(blocks, ScriptProfile.of(script)))
                 }
                 .addOnFailureListener { continuation.resumeWithException(it) }
                 .addOnCanceledListener { continuation.cancel() }
         }
 
-    fun close() = recognizer.close()
+    fun close() {
+        recognizers.values.forEach { it.close() }
+        recognizers.clear()
+    }
 }
 
-/** The recognised page, as blocks of lines in reading order. */
-data class PageText(val blocks: List<List<String>>) {
+/**
+ * The recognised page, as blocks of lines in reading order, plus the rules of the script it is
+ * written in.
+ *
+ * The [profile] is carried on the page rather than passed around separately because every
+ * decision downstream - where a sentence ends, what a heading looks like, which word is worth
+ * blanking - depends on it, and a page and the wrong profile would fail quietly.
+ */
+data class PageText(
+    val blocks: List<List<String>>,
+    val profile: ScriptProfile = ScriptProfile.Latin
+) {
 
     val isEmpty: Boolean get() = blocks.isEmpty()
 
@@ -80,7 +115,7 @@ data class PageText(val blocks: List<List<String>>) {
     /** Split one run into sentences, dropping fragments too short to make a card out of. */
     fun sentencesOf(run: String): List<String> = splitIntoSentences(run)
         .map { it.trim() }
-        .filter { it.length >= MIN_SENTENCE_LENGTH }
+        .filter { it.length >= profile.minSentenceLength }
 
     /**
      * Glue a block's lines back into continuous runs of text.
@@ -88,13 +123,16 @@ data class PageText(val blocks: List<List<String>>) {
      * Two joins:
      *   - a line ending in a hyphen is a word split across lines, so join with nothing
      *   - a line that does not finish a sentence, followed by one that does not begin a new
-     *     thought, is a wrap, so join with a space
+     *     thought, is a wrap, so join with the script's own separator
      *
      * Anything else starts a new run, which is how headings and bullet items stay separate.
      */
     private fun runsIn(block: List<String>): List<String> {
         val runs = mutableListOf<String>()
         val current = StringBuilder()
+        // CJK does not put spaces between words, so inserting one at every wrapped line would
+        // leave a gap in the middle of a word that was never broken in the first place.
+        val joiner = if (profile.wordSpaced) " " else ""
 
         for (line in block) {
             if (current.isEmpty()) {
@@ -107,7 +145,7 @@ data class PageText(val blocks: List<List<String>>) {
                     current.setLength(current.length - 1)
                     current.append(line)
                 }
-                continues(previous, line) -> current.append(' ').append(line)
+                continues(previous, line) -> current.append(joiner).append(line)
                 else -> {
                     runs += previous
                     current.setLength(0)
@@ -123,35 +161,21 @@ data class PageText(val blocks: List<List<String>>) {
         !endsSentence(previous) && !startsNewThought(next)
 
     private fun endsSentence(text: String): Boolean =
-        text.trimEnd().lastOrNull()?.let { it in SENTENCE_ENDERS } == true
+        text.trimEnd().lastOrNull()?.let { it in profile.sentenceEnders } == true
 
     /**
      * A line that is clearly its own thought rather than the continuation of one: a bullet, a
-     * numbered item, or a short capitalised line with no terminator, which is what a heading
-     * looks like once the formatting has been thrown away by OCR.
+     * numbered item, or whatever the script's own heading test recognises.
      */
-    private fun startsNewThought(line: String): Boolean {
-        if (BULLET.containsMatchIn(line)) return true
-        val first = line.firstOrNull() ?: return false
-        return first.isUpperCase() && line.length < HEADING_MAX_LENGTH && !endsSentence(line)
-    }
+    private fun startsNewThought(line: String): Boolean =
+        BULLET.containsMatchIn(line) || profile.startsNewThought(line)
 
     /** One joined run can still hold several sentences; split them back apart. */
     private fun splitIntoSentences(run: String): List<String> =
-        SENTENCE_BOUNDARY.split(run).filter { it.isNotBlank() }
+        profile.sentenceBoundary.split(run).filter { it.isNotBlank() }
 
     private companion object {
-        const val MIN_SENTENCE_LENGTH = 12
-        const val HEADING_MAX_LENGTH = 60
-        const val SENTENCE_ENDERS = ".?!:;"
-
+        /** Bullet and list markers, which look the same in every script this app supports. */
         val BULLET = Regex("""^\s*([-*•●■]|\(?\d{1,2}[.)]|[a-z][.)])\s+""")
-
-        /**
-         * Split after . ? or ! when the next sentence starts with a capital or a Devanagari
-         * letter (ऀ-ॿ). Requiring that lookahead is what keeps "Dr. Bose" and "3.5 kg"
-         * in one piece instead of shattering on every full stop.
-         */
-        val SENTENCE_BOUNDARY = Regex("""(?<=[.?!])\s+(?=[A-Zऀ-ॿ])""")
     }
 }

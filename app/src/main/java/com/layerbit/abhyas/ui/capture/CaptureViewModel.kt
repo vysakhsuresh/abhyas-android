@@ -56,17 +56,23 @@ class CaptureViewModel(
     fun process(uri: Uri) {
         _step.value = CaptureStep.Reading
         viewModelScope.launch {
+            // Read the deck's script at capture time rather than caching it, so changing the
+            // script on the deck screen takes effect on the very next photo.
+            val script = repository.deckScript(deckId)
             val page = try {
-                reader.read(appContext, uri)
+                reader.read(appContext, uri, script)
             } catch (e: Exception) {
                 _step.value = CaptureStep.Empty("That photo could not be read. Try again.")
                 return@launch
             }
 
             if (page.isEmpty || page.characterCount < MIN_USEFUL_CHARACTERS) {
+                // Naming the script matters here: a page that reads as blank is very often a
+                // deck left on the wrong recogniser, and without this the user just retakes the
+                // same photo until they give up.
                 _step.value = CaptureStep.Empty(
-                    "No text found on that page. Hold steady, fill the frame with the page, " +
-                        "and make sure it is well lit."
+                    "No ${script.label} text found on that page. Hold steady, fill the frame, " +
+                        "and check the deck is set to the right script."
                 )
                 return@launch
             }
@@ -87,6 +93,18 @@ class CaptureViewModel(
     }
 
     fun toggleKeep(id: Int) = updateItem(id) { it.copy(keep = !it.keep) }
+
+    /**
+     * Keep or drop everything at once.
+     *
+     * Suggestions arrive sorted by confidence, so the common shapes are "these are all good" and
+     * "only the first few are". Both are one tap with this and a dozen without it, and a review
+     * screen that takes a dozen taps to clear is one people stop opening.
+     */
+    fun setAllKept(keep: Boolean) {
+        val review = _step.value as? CaptureStep.Review ?: return
+        _step.value = CaptureStep.Review(review.items.map { it.copy(keep = keep) })
+    }
 
     fun edit(id: Int, front: String, back: String) =
         updateItem(id) { it.copy(front = front, back = back) }

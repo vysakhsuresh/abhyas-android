@@ -52,6 +52,44 @@ Three consequences that shape the code:
 The only permission Abhyas asks for is `CAMERA`. Importing an existing photo goes through the
 system photo picker, which needs no storage permission at all.
 
+## Scripts
+
+Abhyas reads five writing systems, and the script is chosen **per deck** — a student's Hindi
+deck and Biology deck are open at the same time.
+
+| Script | Reads | Sentence splitting | Definitions | Q&A labels | Clozes |
+|---|---|---|---|---|---|
+| Latin | English, European | `. ? !` | colon + copula | `Q.` / `Ans.` | terms and digits |
+| Devanagari | Hindi, Marathi, Sanskrit, Nepali (+ Latin) | danda `।॥` | colon + "का अर्थ है" | `प्रश्न` / `उत्तर` | terms and digits |
+| Chinese | Simplified, Traditional (+ Latin) | `。？！` | colon | `問` / `答` | digits only |
+| Japanese | Kanji, kana (+ Latin) | `。？！` | colon | `問` / `答` | digits only |
+| Korean | Hangul (+ Latin) | `。？！` | colon | `문제` / `답` | digits only |
+
+**Per deck, not auto-detected.** The Latin model shown Devanagari returns confident nonsense
+rather than failing, which is the worst possible behaviour — the user watches cards get made and
+only later finds out they are gibberish. Every non-Latin model also reads Latin, so a Hindi
+textbook with English technical terms in it works under Devanagari, and there is no case where
+guessing beats asking once.
+
+**Support is deliberately uneven**, and that is honest rather than lazy:
+
+- **Copula inversion is off for Hindi.** Hindi is subject-object-verb, so its copula sits at the
+  end of the clause rather than between the two halves — splitting on `है` would put the whole
+  definition on the left and nothing on the right. Colon definitions and the fixed phrase
+  `X का अर्थ है Y` carry that script instead.
+- **CJK gets no term clozes.** Choosing a word to blank needs segmentation, and these scripts do
+  not mark word boundaries with spaces. A cloze cut at the wrong character is not a harder card,
+  it is a broken one — so CJK falls back to digits and dates, which are unambiguous everywhere.
+
+Every language-specific rule lives in `ScriptProfile`, not in the generator. Adding a sixth
+script is a new object plus a dependency line.
+
+> **APK size.** Each bundled recogniser is several MB and they are additive — all five add
+> roughly 30–40 MB. That is a real price on a cheap phone and a metered connection. To trim it,
+> delete the recogniser lines in `app/build.gradle.kts` and the matching `ScriptOption` /
+> `ScriptProfile` entries; nothing else refers to them. The proper fix when it starts to hurt is
+> Play Feature Delivery, with each non-default script as an on-demand module.
+
 ## How a page becomes cards
 
 ```
@@ -96,7 +134,10 @@ Most of the quality is in the refusals, and each one is there because it produce
 - A cloze never blanks a word that occurs twice in the sentence, which would leave the answer
   sitting in plain sight inside the question.
 - An unlabelled sentence is only taken as an answer when the question carried an explicit `Q`
-  label. A numbered line on its own is far more often a list item than a question.
+  label (or `प्रश्न`, `問`, `문제`). A numbered line on its own is far more often a list item
+  than a question.
+- A **chapter heading is not a definition**. "Chapter 4: Photosynthesis" has the exact shape of a
+  colon definition, so each script carries a heading prefix that rules it out.
 
 ## Scheduling
 
@@ -129,7 +170,8 @@ app/src/main/java/com/layerbit/abhyas/
   data/
     db/          Room: decks, cards, an append-only review log
     srs/         Scheduler - SM-2 plus learning steps, pure and unit-tested
-    ocr/         PageTextReader - ML Kit, and the sentence rebuilding
+    ocr/         PageTextReader - ML Kit per script, and the sentence rebuilding
+                 ScriptOption / ScriptProfile - every language-specific rule, in one place
     generate/    CardGenerator interface + the heuristic implementation
     repo/        AbhyasRepository - everything the UI may do to the collection
     model/       Grade, CardState
@@ -171,6 +213,11 @@ No `google-services.json` is required.
 ./gradlew :app:testDebugUnitTest
 ```
 
+`SchedulerTest` pins the spaced-repetition arithmetic; `HeuristicCardGeneratorTest` runs the
+whole pipeline over realistic OCR output in English, Hindi and Chinese. Every case in the latter
+is a bug that actually reached the working tree, and every one of them failed silently — the app
+kept producing cards, they were just the wrong cards.
+
 This repository's sandbox had no Android SDK and no access to Google's Maven repo, so **the
 Gradle build has not been run end to end** — the source was written and reviewed by hand against
 the AndroidX, CameraX, Room and ML Kit APIs. Open the project in Android Studio and sync to pull
@@ -188,7 +235,9 @@ with real spaced repetition.
 Not built yet:
 
 - A daily reminder, and a streak worth defending
-- Editing a card after it is in a deck (you can delete it, not fix it)
-- Bulk actions on the review screen — keep all, drop all
-- Handwriting is only as good as ML Kit's Latin recogniser, which is to say: mixed
-- Devanagari and other Indic scripts in the OCR itself; the recogniser is Latin-only today
+- Tamil, Telugu, Bengali and the other Indic scripts — ML Kit has no bundled model for them, so
+  they need a different OCR engine rather than another line in the gradle file
+- Handwriting is only as good as the underlying recogniser, which is to say: mixed
+- Reordering or merging decks
+- Any export at all. A collection lives and dies on one device, which is the cost of having no
+  account and no network

@@ -97,6 +97,7 @@ fun CaptureScreen(deckId: Long, onDone: () -> Unit) {
                 items = current.items,
                 onToggle = viewModel::toggleKeep,
                 onEdit = viewModel::edit,
+                onSetAll = viewModel::setAllKept,
                 onRetake = viewModel::retake,
                 onSave = viewModel::save
             )
@@ -286,6 +287,7 @@ private fun ReviewStep(
     items: List<ReviewItem>,
     onToggle: (Int) -> Unit,
     onEdit: (Int, String, String) -> Unit,
+    onSetAll: (Boolean) -> Unit,
     onRetake: () -> Unit,
     onSave: () -> Unit
 ) {
@@ -304,6 +306,25 @@ private fun ReviewStep(
                     "${items.size} suggestions",
                     "Uncheck what you do not want. Tap any card to edit it."
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(18.dp)
+                ) {
+                    Text(
+                        text = "Keep all",
+                        color = AbhyasColors.Saffron,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.clickable { onSetAll(true) }
+                    )
+                    Text(
+                        text = "Drop all",
+                        color = AbhyasColors.Muted,
+                        fontSize = 13.5.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.clickable { onSetAll(false) }
+                    )
+                }
             }
             items(items, key = { it.id }) { item ->
                 ReviewCard(

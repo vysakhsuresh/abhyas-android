@@ -10,6 +10,7 @@ import com.layerbit.abhyas.data.db.ReviewLogEntity
 import com.layerbit.abhyas.data.generate.CardCandidate
 import com.layerbit.abhyas.data.model.CardState
 import com.layerbit.abhyas.data.model.Grade
+import com.layerbit.abhyas.data.ocr.ScriptOption
 import com.layerbit.abhyas.data.srs.Scheduler
 import kotlinx.coroutines.flow.Flow
 
@@ -29,10 +30,24 @@ class AbhyasRepository(context: Context) {
     fun deckSummary(deckId: Long, now: Long = System.currentTimeMillis()): Flow<DeckSummary?> =
         decks.summary(deckId, now)
 
-    suspend fun createDeck(name: String): Long {
+    suspend fun createDeck(name: String, script: ScriptOption = ScriptOption.DEFAULT): Long {
         val now = System.currentTimeMillis()
-        return decks.insert(DeckEntity(name = name.trim(), createdAt = now, lastUsedAt = now))
+        return decks.insert(
+            DeckEntity(name = name.trim(), createdAt = now, lastUsedAt = now, script = script)
+        )
     }
+
+    /**
+     * Change which recogniser this deck's pages are read with. Existing cards are untouched -
+     * they were already read, and re-reading them is not possible without the original photos,
+     * which Abhyas deliberately does not keep.
+     */
+    suspend fun setDeckScript(deckId: Long, script: ScriptOption) {
+        decks.byId(deckId)?.let { decks.update(it.copy(script = script)) }
+    }
+
+    suspend fun deckScript(deckId: Long): ScriptOption =
+        decks.byId(deckId)?.script ?: ScriptOption.DEFAULT
 
     suspend fun renameDeck(deckId: Long, name: String) {
         decks.byId(deckId)?.let { decks.update(it.copy(name = name.trim())) }

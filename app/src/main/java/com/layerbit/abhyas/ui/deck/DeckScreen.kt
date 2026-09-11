@@ -13,7 +13,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -22,6 +26,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -31,11 +36,13 @@ import androidx.lifecycle.viewModelScope
 import com.layerbit.abhyas.data.db.CardEntity
 import com.layerbit.abhyas.data.db.DeckSummary
 import com.layerbit.abhyas.data.model.CardState
+import com.layerbit.abhyas.data.ocr.ScriptOption
 import com.layerbit.abhyas.data.repo.AbhyasRepository
 import com.layerbit.abhyas.ui.components.Card
 import com.layerbit.abhyas.ui.components.EmptyState
 import com.layerbit.abhyas.ui.components.Pill
 import com.layerbit.abhyas.ui.components.PrimaryButton
+import com.layerbit.abhyas.ui.components.ScriptPickerDialog
 import com.layerbit.abhyas.ui.components.SecondaryButton
 import com.layerbit.abhyas.ui.components.StatRow
 import com.layerbit.abhyas.ui.repositoryViewModel
@@ -59,6 +66,24 @@ class DeckViewModel(
         viewModelScope.launch { repository.deleteCard(card) }
     }
 
+    fun setScript(script: ScriptOption) {
+        viewModelScope.launch { repository.setDeckScript(deckId, script) }
+    }
+
+    /**
+     * Correct a card's wording without disturbing its schedule.
+     *
+     * Only the two text fields are touched, deliberately. A typo in a question does not mean the
+     * user has forgotten the fact, so rewriting it must not reset the interval, the ease or the
+     * lapse count that months of reviews have established.
+     */
+    fun editCard(card: CardEntity, front: String, back: String) {
+        if (front.isBlank() || back.isBlank()) return
+        viewModelScope.launch {
+            repository.updateCard(card.copy(front = front.trim(), back = back.trim()))
+        }
+    }
+
     fun deleteDeck(onDeleted: () -> Unit) {
         viewModelScope.launch {
             repository.deleteDeck(deckId)
@@ -80,6 +105,8 @@ fun DeckScreen(
     val cards by viewModel.cards.collectAsStateWithLifecycle()
 
     var confirmingDelete by remember { mutableStateOf(false) }
+    var changingScript by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<CardEntity?>(null) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -113,7 +140,14 @@ fun DeckScreen(
             )
         }
 
-        item { DeckHeader(summary = summary, onStudy = onStudy, onAddCards = onAddCards) }
+        item {
+            DeckHeader(
+                summary = summary,
+                onStudy = onStudy,
+                onAddCards = onAddCards,
+                onChangeScript = { changingScript = true }
+            )
+        }
 
         if (cards.isEmpty()) {
             item {
@@ -134,9 +168,32 @@ fun DeckScreen(
                 )
             }
             items(cards, key = { it.id }) { card ->
-                CardRow(card = card, onDelete = { viewModel.deleteCard(card) })
+                CardRow(
+                    card = card,
+                    onEdit = { editing = card },
+                    onDelete = { viewModel.deleteCard(card) }
+                )
             }
         }
+    }
+
+    if (changingScript) {
+        ScriptPickerDialog(
+            selected = summary?.script ?: ScriptOption.DEFAULT,
+            onSelect = viewModel::setScript,
+            onDismiss = { changingScript = false }
+        )
+    }
+
+    editing?.let { card ->
+        EditCardDialog(
+            card = card,
+            onSave = { front, back ->
+                viewModel.editCard(card, front, back)
+                editing = null
+            },
+            onDismiss = { editing = null }
+        )
     }
 
     if (confirmingDelete) {
@@ -179,7 +236,12 @@ fun DeckScreen(
 }
 
 @Composable
-private fun DeckHeader(summary: DeckSummary?, onStudy: () -> Unit, onAddCards: () -> Unit) {
+private fun DeckHeader(
+    summary: DeckSummary?,
+    onStudy: () -> Unit,
+    onAddCards: () -> Unit,
+    onChangeScript: () -> Unit
+) {
     val due = summary?.due ?: 0
     val newCount = summary?.newCount ?: 0
     val waiting = due + newCount
@@ -200,11 +262,25 @@ private fun DeckHeader(summary: DeckSummary?, onStudy: () -> Unit, onAddCards: (
         )
         Spacer(Modifier.height(10.dp))
         SecondaryButton("Add cards from a page", onClick = onAddCards)
+        Spacer(Modifier.height(14.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onChangeScript),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Reads pages in", color = AbhyasColors.Dim, fontSize = 12.5.sp)
+            Text(
+                text = "${summary?.script?.nativeLabel ?: ""}  ${summary?.script?.label ?: ""}",
+                color = AbhyasColors.Saffron,
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Medium
+            )
+        }
     }
 }
 
 @Composable
-private fun CardRow(card: CardEntity, onDelete: () -> Unit) {
+private fun CardRow(card: CardEntity, onEdit: () -> Unit, onDelete: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
 
     Card(onClick = { expanded = !expanded }) {
@@ -234,6 +310,13 @@ private fun CardRow(card: CardEntity, onDelete: () -> Unit) {
                     fontSize = 12.sp,
                     modifier = Modifier.weight(1f)
                 )
+                Text(
+                    text = "Edit",
+                    color = AbhyasColors.Saffron,
+                    fontSize = 12.5.sp,
+                    modifier = Modifier.clickable(onClick = onEdit)
+                )
+                Spacer(Modifier.width(18.dp))
                 Text(
                     text = "Delete",
                     color = AbhyasColors.Again,
@@ -271,5 +354,100 @@ private fun CardEntity.scheduleSummary(): String = when (state) {
             else -> ", forgotten $lapses times"
         }
         "Every $intervalDays $days$lapseNote"
+    }
+}
+
+/**
+ * Fix a card's wording.
+ *
+ * The schedule is deliberately not shown or touched here. Someone correcting a typo has not
+ * forgotten the fact, so an edit must never cost them the interval, ease and lapse history that
+ * months of reviews built up - and the surest way to guarantee that is to give the edit screen
+ * no way to express it.
+ */
+@Composable
+private fun EditCardDialog(
+    card: CardEntity,
+    onSave: (String, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var front by remember(card.id) { mutableStateOf(card.front) }
+    var back by remember(card.id) { mutableStateOf(card.back) }
+    val valid = front.isNotBlank() && back.isNotBlank()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = AbhyasColors.Surface,
+        title = { Text("Edit card", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                EditField("Question", front) { front = it }
+                Spacer(Modifier.height(12.dp))
+                EditField("Answer", back) { back = it }
+
+                if (!card.sourceText.isNullOrBlank()) {
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        "FROM YOUR NOTES",
+                        color = AbhyasColors.Dim,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Medium,
+                        letterSpacing = 1.sp
+                    )
+                    Spacer(Modifier.height(5.dp))
+                    // Shown but not editable: it is the record of what was actually on the page,
+                    // and letting it drift from that would make it useless as a reference.
+                    Text(
+                        text = card.sourceText,
+                        color = AbhyasColors.Muted,
+                        fontSize = 13.sp,
+                        lineHeight = 19.sp
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Text(
+                text = "Save",
+                color = if (valid) AbhyasColors.Saffron else AbhyasColors.Dim,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier
+                    .clickable(enabled = valid) { onSave(front, back) }
+                    .padding(12.dp)
+            )
+        },
+        dismissButton = {
+            Text(
+                text = "Cancel",
+                color = AbhyasColors.Muted,
+                modifier = Modifier.clickable(onClick = onDismiss).padding(12.dp)
+            )
+        }
+    )
+}
+
+@Composable
+private fun EditField(label: String, value: String, onChange: (String) -> Unit) {
+    Column {
+        Text(
+            label.uppercase(),
+            color = AbhyasColors.Dim,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Medium,
+            letterSpacing = 1.sp
+        )
+        Spacer(Modifier.height(4.dp))
+        OutlinedTextField(
+            value = value,
+            onValueChange = onChange,
+            modifier = Modifier.fillMaxWidth(),
+            textStyle = TextStyle(fontSize = 15.sp, color = AbhyasColors.Text),
+            colors = TextFieldDefaults.colors(
+                focusedContainerColor = AbhyasColors.SurfaceDim,
+                unfocusedContainerColor = AbhyasColors.SurfaceDim,
+                focusedIndicatorColor = AbhyasColors.Saffron,
+                unfocusedIndicatorColor = AbhyasColors.Border
+            )
+        )
     }
 }

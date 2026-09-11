@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
@@ -32,11 +34,13 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.layerbit.abhyas.data.db.DeckSummary
+import com.layerbit.abhyas.data.ocr.ScriptOption
 import com.layerbit.abhyas.data.repo.AbhyasRepository
 import com.layerbit.abhyas.ui.components.Card
 import com.layerbit.abhyas.ui.components.EmptyState
 import com.layerbit.abhyas.ui.components.Pill
 import com.layerbit.abhyas.ui.components.PrimaryButton
+import com.layerbit.abhyas.ui.components.ScriptPicker
 import com.layerbit.abhyas.ui.components.ScreenTitle
 import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
@@ -54,9 +58,9 @@ class DecksViewModel(private val repository: AbhyasRepository) : ViewModel() {
     val decks = repository.deckSummaries()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
-    fun createDeck(name: String) {
+    fun createDeck(name: String, script: ScriptOption) {
         if (name.isBlank()) return
-        viewModelScope.launch { repository.createDeck(name) }
+        viewModelScope.launch { repository.createDeck(name, script) }
     }
 }
 
@@ -113,8 +117,8 @@ fun DecksScreen(onOpenDeck: (Long) -> Unit, onAbout: () -> Unit) {
     if (creating) {
         NewDeckDialog(
             onDismiss = { creating = false },
-            onCreate = {
-                viewModel.createDeck(it)
+            onCreate = { name, script ->
+                viewModel.createDeck(name, script)
                 creating = false
             }
         )
@@ -138,15 +142,18 @@ private fun DeckRow(deck: DeckSummary, onClick: () -> Unit) {
 }
 
 @Composable
-private fun NewDeckDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
+private fun NewDeckDialog(onDismiss: () -> Unit, onCreate: (String, ScriptOption) -> Unit) {
     var name by remember { mutableStateOf("") }
+    // Asked once, here, rather than on every capture. It is a property of the textbook, so it
+    // almost never changes after the deck exists - and it can still be changed on the deck.
+    var script by remember { mutableStateOf(ScriptOption.DEFAULT) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = AbhyasColors.Surface,
         title = { Text("New deck", fontWeight = FontWeight.Bold) },
         text = {
-            Column {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     "A subject, a chapter, or whatever you are revising.",
                     color = AbhyasColors.Muted,
@@ -159,7 +166,9 @@ private fun NewDeckDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
                     singleLine = true,
                     placeholder = { Text("Biology - Chapter 4", color = AbhyasColors.Dim) },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
-                    keyboardActions = KeyboardActions(onDone = { if (name.isNotBlank()) onCreate(name) }),
+                    keyboardActions = KeyboardActions(
+                        onDone = { if (name.isNotBlank()) onCreate(name, script) }
+                    ),
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = AbhyasColors.SurfaceDim,
                         unfocusedContainerColor = AbhyasColors.SurfaceDim,
@@ -167,6 +176,16 @@ private fun NewDeckDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
                         unfocusedIndicatorColor = AbhyasColors.Border
                     )
                 )
+                Spacer(Modifier.height(18.dp))
+                Text(
+                    "SCRIPT",
+                    color = AbhyasColors.Dim,
+                    fontSize = 10.5.sp,
+                    fontWeight = FontWeight.Medium,
+                    letterSpacing = 1.2.sp
+                )
+                Spacer(Modifier.height(8.dp))
+                ScriptPicker(selected = script, onSelect = { script = it })
             }
         },
         confirmButton = {
@@ -175,7 +194,7 @@ private fun NewDeckDialog(onDismiss: () -> Unit, onCreate: (String) -> Unit) {
                 color = if (name.isBlank()) AbhyasColors.Dim else AbhyasColors.Saffron,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
-                    .clickable(enabled = name.isNotBlank()) { onCreate(name) }
+                    .clickable(enabled = name.isNotBlank()) { onCreate(name, script) }
                     .padding(12.dp)
             )
         },

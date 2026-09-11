@@ -6,6 +6,7 @@ import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Update
 import com.layerbit.abhyas.data.model.CardState
+import com.layerbit.abhyas.data.ocr.ScriptOption
 import kotlinx.coroutines.flow.Flow
 
 /** A deck plus the three counts the deck list and the study screen both need. */
@@ -13,6 +14,7 @@ data class DeckSummary(
     val id: Long,
     val name: String,
     val lastUsedAt: Long,
+    val script: ScriptOption,
     val total: Int,
     val due: Int,
     val newCount: Int
@@ -46,7 +48,7 @@ interface DeckDao {
      */
     @Query(
         """
-        SELECT d.id, d.name, d.lastUsedAt,
+        SELECT d.id, d.name, d.lastUsedAt, d.script,
                (SELECT COUNT(*) FROM cards c WHERE c.deckId = d.id) AS total,
                (SELECT COUNT(*) FROM cards c
                  WHERE c.deckId = d.id AND c.suspended = 0
@@ -62,7 +64,7 @@ interface DeckDao {
 
     @Query(
         """
-        SELECT d.id, d.name, d.lastUsedAt,
+        SELECT d.id, d.name, d.lastUsedAt, d.script,
                (SELECT COUNT(*) FROM cards c WHERE c.deckId = d.id) AS total,
                (SELECT COUNT(*) FROM cards c
                  WHERE c.deckId = d.id AND c.suspended = 0

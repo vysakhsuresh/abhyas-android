@@ -3,6 +3,7 @@ package com.layerbit.abhyas.data.db
 import androidx.room.TypeConverter
 import com.layerbit.abhyas.data.model.CardState
 import com.layerbit.abhyas.data.model.Grade
+import com.layerbit.abhyas.data.ocr.ScriptOption
 
 /**
  * Enums are stored by name rather than ordinal on purpose: an ordinal silently reinterprets every
@@ -15,4 +16,14 @@ class Converters {
 
     @TypeConverter fun gradeToString(value: Grade): String = value.name
     @TypeConverter fun stringToGrade(value: String): Grade = Grade.valueOf(value)
+
+    @TypeConverter fun scriptToString(value: ScriptOption): String = value.name
+
+    /**
+     * Falls back rather than throwing. A row written by a future build that knows a script this
+     * one does not would otherwise crash the app on read, and reading someone's deck as Latin is
+     * a far better failure than refusing to open their collection at all.
+     */
+    @TypeConverter fun stringToScript(value: String): ScriptOption =
+        runCatching { ScriptOption.valueOf(value) }.getOrDefault(ScriptOption.DEFAULT)
 }
