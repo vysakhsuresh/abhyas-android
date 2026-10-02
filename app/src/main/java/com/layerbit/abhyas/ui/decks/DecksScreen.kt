@@ -83,7 +83,13 @@ class DecksViewModel(private val repository: AbhyasRepository) : ViewModel() {
 }
 
 @Composable
-fun DecksScreen(onOpenDeck: (Long) -> Unit, onAbout: () -> Unit, onSettings: () -> Unit) {
+fun DecksScreen(
+    onOpenDeck: (Long) -> Unit,
+    onAbout: () -> Unit,
+    onSettings: () -> Unit,
+    onInsights: () -> Unit,
+    onSearch: () -> Unit
+) {
     val viewModel = repositoryViewModel { DecksViewModel(it) }
     val decks by viewModel.decks.collectAsStateWithLifecycle()
     val streak by viewModel.streak.collectAsStateWithLifecycle()
@@ -104,20 +110,14 @@ fun DecksScreen(onOpenDeck: (Long) -> Unit, onAbout: () -> Unit, onSettings: () 
                 verticalAlignment = Alignment.Top
             ) {
                 ScreenTitle("Abhyas", "Your notes ask the questions.")
+                // Four destinations is the most a header can hold before it stops being
+                // scannable, so About moves inside Settings rather than taking a fifth slot.
                 Row(modifier = Modifier.padding(top = 8.dp)) {
-                    Text(
-                        text = "Settings",
-                        color = AbhyasColors.Muted,
-                        fontSize = 14.sp,
-                        modifier = Modifier.clickable(onClick = onSettings)
-                    )
-                    Spacer(Modifier.width(16.dp))
-                    Text(
-                        text = "About",
-                        color = AbhyasColors.Muted,
-                        fontSize = 14.sp,
-                        modifier = Modifier.clickable(onClick = onAbout)
-                    )
+                    HeaderLink("Find", onSearch)
+                    Spacer(Modifier.width(14.dp))
+                    HeaderLink("Insights", onInsights)
+                    Spacer(Modifier.width(14.dp))
+                    HeaderLink("More", onSettings)
                 }
             }
 
@@ -244,5 +244,15 @@ private fun NewDeckDialog(onDismiss: () -> Unit, onCreate: (String, ScriptOption
                 modifier = Modifier.clickable(onClick = onDismiss).padding(12.dp)
             )
         }
+    )
+}
+
+@Composable
+private fun HeaderLink(label: String, onClick: () -> Unit) {
+    Text(
+        text = label,
+        color = AbhyasColors.Muted,
+        fontSize = 14.sp,
+        modifier = Modifier.clickable(onClick = onClick)
     )
 }

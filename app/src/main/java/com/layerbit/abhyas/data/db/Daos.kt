@@ -7,6 +7,7 @@ import androidx.room.Query
 import androidx.room.Update
 import com.layerbit.abhyas.data.model.CardState
 import com.layerbit.abhyas.data.ocr.ScriptOption
+import com.layerbit.abhyas.data.srs.Scheduler
 import kotlinx.coroutines.flow.Flow
 
 /** A deck plus the three counts the deck list and the study screen both need. */
@@ -150,6 +151,61 @@ interface CardDao {
     @Query("SELECT COUNT(*) FROM cards WHERE deckId = :deckId AND state = :state")
     suspend fun countInState(deckId: Long, state: CardState): Int
 
+    /**
+     * Search every card in the collection.
+     *
+     * LIKE rather than an FTS table: a phone-sized collection is thousands of cards, not
+     * millions, and FTS would add a second table to keep in step with this one for no gain a
+     * user could feel. It searches the source sentence too, which is often where the word the
+     * user half-remembers actually appears.
+     */
+    @Query(
+        """
+        SELECT * FROM cards
+         WHERE front LIKE '%' || :term || '%'
+            OR back LIKE '%' || :term || '%'
+            OR sourceText LIKE '%' || :term || '%'
+         ORDER BY createdAt DESC
+         LIMIT 200
+        """
+    )
+    fun search(term: String): Flow<List<CardEntity>>
+
+    /** Cards forgotten so often they are worth rewriting. See [Scheduler.LEECH_THRESHOLD]. */
+    @Query("SELECT * FROM cards WHERE lapses >= :threshold ORDER BY lapses DESC")
+    fun leeches(threshold: Int): Flow<List<CardEntity>>
+
+    /** How card memory is spread across the collection, for the statistics screen. */
+    @Query(
+        """
+        SELECT
+          SUM(CASE WHEN state = 'NEW' THEN 1 ELSE 0 END) AS unseen,
+          SUM(CASE WHEN state IN ('LEARNING','RELEARNING') THEN 1 ELSE 0 END) AS learning,
+          SUM(CASE WHEN state = 'REVIEW' AND intervalDays < 21 THEN 1 ELSE 0 END) AS young,
+          SUM(CASE WHEN state = 'REVIEW' AND intervalDays >= 21 THEN 1 ELSE 0 END) AS mature
+        FROM cards WHERE suspended = 0
+        """
+    )
+    fun maturity(): Flow<Maturity>
+
+    /**
+     * How many cards fall due on each of the next [days] days.
+     *
+     * The forecast is what turns "you have 40 reviews today" into something a student can plan
+     * around - a wall of work on Thursday is worth knowing about on Monday.
+     */
+    @Query(
+        """
+        SELECT CAST((dueAt - :from) / 86400000 AS INTEGER) AS dayOffset, COUNT(*) AS count
+          FROM cards
+         WHERE suspended = 0 AND state != 'NEW' AND dueAt >= :from
+           AND dueAt < :from + (:days * 86400000)
+         GROUP BY dayOffset
+         ORDER BY dayOffset ASC
+        """
+    )
+    fun forecast(from: Long, days: Int): Flow<List<ForecastDay>>
+
     @Query("DELETE FROM cards WHERE deckId = :deckId")
     suspend fun deleteAllInDeck(deckId: Long)
 
@@ -179,11 +235,42 @@ interface CardDao {
 /** One day's answer count, for the streak strip on the stats screen. */
 data class DailyCount(val day: String, val count: Int)
 
+/** How the collection is spread across the stages of being learned. */
+data class Maturity(
+    val unseen: Int,
+    val learning: Int,
+    /** Reviewing, but still on an interval under three weeks. */
+    val young: Int,
+    /** Reviewing on three weeks or more - knowledge that is actually sticking. */
+    val mature: Int
+) {
+    val total: Int get() = unseen + learning + young + mature
+}
+
+/** Cards falling due [dayOffset] days from now. */
+data class ForecastDay(val dayOffset: Int, val count: Int)
+
+/** How often answers were correct, over some window. */
+data class RetentionCount(val correct: Int, val total: Int) {
+    /** Share of reviews recalled, 0..1. Null when there is nothing to divide by. */
+    val rate: Float? get() = if (total == 0) null else correct.toFloat() / total
+}
+
 @Dao
 interface ReviewLogDao {
 
     @Insert
-    suspend fun insert(log: ReviewLogEntity)
+    suspend fun insert(log: ReviewLogEntity): Long
+
+    /**
+     * Remove one logged answer. The only caller is undo.
+     *
+     * The log is append-only everywhere else on purpose - it is the audit trail when scheduling
+     * looks wrong. Undo is the one case where a row must genuinely disappear, because leaving it
+     * would mean a review the user explicitly took back still counted towards their streak.
+     */
+    @Query("DELETE FROM review_log WHERE id = :id")
+    suspend fun deleteById(id: Long)
 
     @Query("SELECT COUNT(*) FROM review_log WHERE reviewedAt >= :since")
     fun countSince(since: Long): Flow<Int>
@@ -216,4 +303,21 @@ interface ReviewLogDao {
 
     @Query("UPDATE review_log SET deckId = :destination WHERE deckId = :source")
     suspend fun moveAll(source: Long, destination: Long)
+
+    /**
+     * How many answers since [since] were recalled at all, versus forgotten.
+     *
+     * "Again" is the only grade that means the card was not recalled, so true retention is
+     * everything else over everything. This is the number that says whether the schedule is
+     * working - if it drifts well below the target, the intervals are too long for this user.
+     */
+    @Query(
+        """
+        SELECT SUM(CASE WHEN grade != 'AGAIN' THEN 1 ELSE 0 END) AS correct,
+               COUNT(*) AS total
+          FROM review_log
+         WHERE reviewedAt >= :since
+        """
+    )
+    fun retention(since: Long): Flow<RetentionCount>
 }

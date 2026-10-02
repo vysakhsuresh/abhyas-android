@@ -6,6 +6,8 @@ import com.layerbit.abhyas.data.db.CardEntity
 import com.layerbit.abhyas.data.model.CardState
 import com.layerbit.abhyas.data.model.Grade
 import com.layerbit.abhyas.data.repo.AbhyasRepository
+import com.layerbit.abhyas.data.repo.AnsweredReview
+import com.layerbit.abhyas.data.srs.Scheduler
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -21,7 +23,19 @@ data class StudyState(
     val answered: Int = 0,
     val finished: Boolean = false,
     /** When the soonest card comes back, once the sitting is over. Null if nothing is scheduled. */
-    val nextDueAt: Long? = null
+    val nextDueAt: Long? = null,
+    /** Whether the last answer can still be taken back. */
+    val canUndo: Boolean = false,
+    /**
+     * What each button would schedule, in days, for the card on screen.
+     *
+     * Shown on the buttons themselves. It turns a blind self-grade into an informed one - "Good"
+     * meaning three weeks and "Easy" meaning three months is the difference the user is actually
+     * choosing between, and no other app on a phone tells them before they tap.
+     */
+    val previews: Map<Grade, Int> = emptyMap(),
+    /** Set when an answer just suspended a card for being forgotten too often. */
+    val leechWarning: String? = null
 )
 
 class StudyViewModel(
@@ -42,6 +56,9 @@ class StudyViewModel(
      */
     private val queue = mutableListOf<CardEntity>()
 
+    /** The last answer given, held so it can be taken back. One step only - see [undo]. */
+    private var lastReview: AnsweredReview? = null
+
     init {
         viewModelScope.launch {
             queue += repository.buildQueue(deckId)
@@ -60,22 +77,64 @@ class StudyViewModel(
         if (!_state.value.answerShown) return
 
         viewModelScope.launch {
-            val updated = repository.answer(current, grade)
+            val review = repository.answer(current, grade)
+            lastReview = review
             queue.remove(current)
 
             // Anything still on a minute-scale step belongs in this sitting. Re-inserted in due
-            // order so the one-minute card comes back before the ten-minute one.
-            if (updated.state == CardState.LEARNING || updated.state == CardState.RELEARNING) {
+            // order so the one-minute card comes back before the ten-minute one. A card just
+            // suspended for being a leech is not re-queued - that is the point of suspending it.
+            val updated = review.after
+            val staysInSession = !updated.suspended &&
+                (updated.state == CardState.LEARNING || updated.state == CardState.RELEARNING)
+            if (staysInSession) {
                 val at = queue.indexOfFirst { it.dueAt > updated.dueAt }
                 if (at == -1) queue.add(updated) else queue.add(at, updated)
             }
 
-            _state.value = _state.value.copy(answered = _state.value.answered + 1)
+            _state.value = _state.value.copy(
+                answered = _state.value.answered + 1,
+                leechWarning = if (review.becameLeech) {
+                    "You have forgotten this one ${updated.lapses} times. It is set aside - " +
+                        "a card this sticky usually needs rewriting, not repeating."
+                } else {
+                    null
+                }
+            )
             advance()
         }
     }
 
-    private suspend fun advance() {
+    /**
+     * Take back the last answer and put the card back in front of the user.
+     *
+     * Only one step, deliberately. Multi-level undo in a review app invites someone to unwind
+     * half a session they half-remember, and the mistake this exists for - tapping Easy when you
+     * meant Again - is always the answer you just gave.
+     */
+    fun undo() {
+        val review = lastReview ?: return
+        lastReview = null
+
+        viewModelScope.launch {
+            repository.undo(review)
+
+            queue.removeAll { it.id == review.before.id }
+            queue.add(0, review.before)
+
+            _state.value = _state.value.copy(
+                answered = (_state.value.answered - 1).coerceAtLeast(0),
+                leechWarning = null
+            )
+            advance(showAnswer = true)
+        }
+    }
+
+    fun dismissLeechWarning() {
+        _state.value = _state.value.copy(leechWarning = null)
+    }
+
+    private suspend fun advance(showAnswer: Boolean = false) {
         val next = queue.firstOrNull()
         if (next == null) {
             _state.value = _state.value.copy(
@@ -84,6 +143,8 @@ class StudyViewModel(
                 answerShown = false,
                 remaining = 0,
                 finished = true,
+                canUndo = lastReview != null,
+                previews = emptyMap(),
                 nextDueAt = repository.nextDueAt(deckId)
             )
             return
@@ -91,9 +152,26 @@ class StudyViewModel(
         _state.value = _state.value.copy(
             loading = false,
             card = next,
-            answerShown = false,
+            answerShown = showAnswer,
             remaining = queue.size,
-            finished = false
+            finished = false,
+            canUndo = lastReview != null,
+            previews = previewsFor(next)
         )
+    }
+
+    /**
+     * What each button would schedule for this card, in days.
+     *
+     * Computed by running the real scheduler four times rather than approximating, so what the
+     * button says is exactly what pressing it does. Cheap - FSRS is a handful of floating point
+     * operations and this runs once per card, not per frame.
+     */
+    private fun previewsFor(card: CardEntity): Map<Grade, Int> {
+        val now = System.currentTimeMillis()
+        val scheduling = card.scheduling()
+        return Grade.entries.associateWith { grade ->
+            Scheduler.next(scheduling, grade, now).intervalDays
+        }
     }
 }

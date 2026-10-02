@@ -1,5 +1,6 @@
 package com.layerbit.abhyas.data.db
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -38,14 +39,32 @@ data class CardEntity(
      */
     val sourceText: String?,
 
-    // --- Scheduling. Mirrors [Scheduling]; see [Scheduler] for what each field means. ---
+    // --- Scheduling. Mirrors [Scheduling]; see [Scheduler] and [Fsrs] for what each means. ---
     val state: CardState = CardState.NEW,
     val dueAt: Long = 0L,
     val intervalDays: Int = 0,
-    val easeFactor: Double = Scheduler.STARTING_EASE,
+
+    /** FSRS stability: days until recall probability falls to 90%. */
+    @ColumnInfo(defaultValue = "0.0")
+    val stability: Double = 0.0,
+    /** FSRS difficulty, 1..10. */
+    @ColumnInfo(defaultValue = "0.0")
+    val difficulty: Double = 0.0,
+    /**
+     * When this card was last answered.
+     *
+     * FSRS needs it, and SM-2 never did - it had no concept of how late a review was. Collections
+     * created before the change have zero here, and the scheduler falls back to the interval.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val lastReviewedAt: Long = 0L,
+
     val repetitions: Int = 0,
     val lapses: Int = 0,
     val learningStep: Int = 0,
+
+    /** SM-2's ease factor, kept only so a pre-FSRS collection can be converted. */
+    val easeFactor: Double = Scheduler.LEGACY_STARTING_EASE,
 
     /** Suspended cards stay in the deck and in the counts, but never enter the queue. */
     val suspended: Boolean = false,
@@ -57,20 +76,29 @@ data class CardEntity(
         state = state,
         dueAt = dueAt,
         intervalDays = intervalDays,
-        easeFactor = easeFactor,
+        stability = stability,
+        difficulty = difficulty,
+        lastReviewedAt = lastReviewedAt,
         repetitions = repetitions,
         lapses = lapses,
-        learningStep = learningStep
+        learningStep = learningStep,
+        easeFactor = easeFactor
     )
+
+    /** Forgotten often enough that the card itself is the problem. See [Scheduler.LEECH_THRESHOLD]. */
+    val isLeech: Boolean get() = Scheduler.isLeech(lapses)
 
     /** Fold a scheduler result back in, leaving the content fields untouched. */
     fun withScheduling(s: Scheduling): CardEntity = copy(
         state = s.state,
         dueAt = s.dueAt,
         intervalDays = s.intervalDays,
-        easeFactor = s.easeFactor,
+        stability = s.stability,
+        difficulty = s.difficulty,
+        lastReviewedAt = s.lastReviewedAt,
         repetitions = s.repetitions,
         lapses = s.lapses,
-        learningStep = s.learningStep
+        learningStep = s.learningStep,
+        easeFactor = s.easeFactor
     )
 }

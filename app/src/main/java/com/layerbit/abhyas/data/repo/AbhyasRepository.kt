@@ -7,6 +7,9 @@ import com.layerbit.abhyas.data.db.CardEntity
 import com.layerbit.abhyas.data.db.DailyCount
 import com.layerbit.abhyas.data.db.DeckEntity
 import com.layerbit.abhyas.data.db.DeckSummary
+import com.layerbit.abhyas.data.db.ForecastDay
+import com.layerbit.abhyas.data.db.Maturity
+import com.layerbit.abhyas.data.db.RetentionCount
 import com.layerbit.abhyas.data.db.ReviewLogEntity
 import com.layerbit.abhyas.data.generate.CardCandidate
 import com.layerbit.abhyas.data.model.CardState
@@ -15,6 +18,7 @@ import com.layerbit.abhyas.data.ocr.ScriptOption
 import com.layerbit.abhyas.data.srs.Scheduler
 import java.util.Calendar
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 
 /** Everything the UI is allowed to do to the collection. */
 class AbhyasRepository(context: Context) {
@@ -114,17 +118,26 @@ class AbhyasRepository(context: Context) {
     /**
      * Record an answer: advance the card's scheduling and append to the log.
      *
-     * Returns the updated card so the session can decide whether it needs showing again in this
-     * same sitting (anything still in a minute-scale state does).
+     * Returns everything needed to show the result *and* to take it back. Mis-tapping Easy when
+     * you meant Again is the single most common mistake in any review app, and without undo it
+     * silently costs the user months of correct scheduling on that card - a mistake they cannot
+     * see and would not know how to repair.
      */
-    suspend fun answer(card: CardEntity, grade: Grade): CardEntity {
+    suspend fun answer(card: CardEntity, grade: Grade): AnsweredReview {
         val now = System.currentTimeMillis()
         val before = card.scheduling()
         val after = Scheduler.next(before, grade, now)
-        val updated = card.withScheduling(after)
+
+        var updated = card.withScheduling(after)
+
+        // Crossing the leech threshold suspends the card. Left in the queue it would come back
+        // every few days forever, soaking up review time and teaching the user that the app
+        // wastes it - the card needs rewriting, not repeating.
+        val becameLeech = updated.isLeech && !card.isLeech
+        if (becameLeech) updated = updated.copy(suspended = true)
 
         cards.update(updated)
-        log.insert(
+        val logId = log.insert(
             ReviewLogEntity(
                 cardId = card.id,
                 deckId = card.deckId,
@@ -135,7 +148,19 @@ class AbhyasRepository(context: Context) {
             )
         )
         decks.touch(card.deckId, now)
-        return updated
+        return AnsweredReview(before = card, after = updated, logId = logId, becameLeech = becameLeech)
+    }
+
+    /**
+     * Take back the last answer.
+     *
+     * Both halves matter. Restoring the card undoes the scheduling damage; deleting the log row
+     * undoes the rest, because a review the user explicitly took back must not keep counting
+     * towards their streak or their retention figure.
+     */
+    suspend fun undo(review: AnsweredReview) {
+        cards.update(review.before)
+        log.deleteById(review.logId)
     }
 
     /** When the soonest card in this deck comes back, or null if nothing is scheduled. */
@@ -148,6 +173,21 @@ class AbhyasRepository(context: Context) {
     fun dailyCounts(since: Long): Flow<List<DailyCount>> = log.dailyCounts(since)
 
     fun totalReviews(): Flow<Int> = log.totalReviews()
+
+    // --------------------------------------------------------------------- search and insight
+
+    /** Every card matching [term], across every deck. Blank returns nothing rather than all. */
+    fun search(term: String): Flow<List<CardEntity>> =
+        if (term.isBlank()) flowOf(emptyList()) else cards.search(term.trim())
+
+    fun leeches(): Flow<List<CardEntity>> = cards.leeches(Scheduler.LEECH_THRESHOLD)
+
+    fun maturity(): Flow<Maturity> = cards.maturity()
+
+    fun forecast(days: Int = 14): Flow<List<ForecastDay>> =
+        cards.forecast(System.currentTimeMillis(), days)
+
+    fun retention(since: Long): Flow<RetentionCount> = log.retention(since)
 
     // ------------------------------------------------------------------------------ reminders
 
@@ -227,3 +267,17 @@ class AbhyasRepository(context: Context) {
         const val DEFAULT_NEW_PER_SESSION = 20
     }
 }
+
+/**
+ * One answered review, and everything needed to take it back.
+ *
+ * [before] is the card exactly as it was, so undo is a restore rather than a reconstruction -
+ * there is no attempt to run the scheduler backwards, which for FSRS would not be possible.
+ */
+data class AnsweredReview(
+    val before: CardEntity,
+    val after: CardEntity,
+    val logId: Long,
+    /** True when this answer is what pushed the card over the leech threshold. */
+    val becameLeech: Boolean
+)

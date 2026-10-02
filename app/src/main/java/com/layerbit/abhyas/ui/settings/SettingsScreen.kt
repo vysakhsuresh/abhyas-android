@@ -49,7 +49,7 @@ import java.util.Date
 import java.util.Locale
 
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit, onAbout: () -> Unit) {
     val context = LocalContext.current
     val appContext = context.applicationContext
     val viewModel = repositoryViewModel { SettingsViewModel(it, appContext) }
@@ -198,6 +198,12 @@ fun SettingsScreen(onBack: () -> Unit) {
                     fontSize = 12.5.sp,
                     lineHeight = 18.sp
                 )
+            }
+        }
+
+        item {
+            Card {
+                ActionRow("About Abhyas", onAbout)
             }
         }
 

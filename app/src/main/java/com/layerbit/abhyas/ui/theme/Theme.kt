@@ -36,6 +36,25 @@ object AbhyasColors {
     val OnSaffron = Color(0xFF1A1206)
 
     /**
+     * Card maturity, in order: never seen, being learned, reviewing under three weeks,
+     * reviewing beyond it.
+     *
+     * Re-stepped from the brand hues into the dark-mode lightness band (OKLCH L 0.48-0.67,
+     * chroma >= 0.10) and checked with a palette validator rather than by eye: the obvious
+     * choice - reusing Saffron, Easy and Good directly - failed on lightness and read as four
+     * pastels against the surface, and Dim failed the chroma floor outright by reading as grey.
+     * Same hues, correct steps.
+     *
+     * Colour-blind separation passes for deutan and protan but is tight for tritan, so the
+     * stacked bar is always accompanied by direct labels. Identity is never carried by colour
+     * alone.
+     */
+    val Unseen = Color(0xFF846ECB)
+    val Learning = Color(0xFFB26F00)
+    val Young = Color(0xFF1F86CD)
+    val Mature = Color(0xFF009961)
+
+    /**
      * The four review answers, and the only place these colours are defined. A grade means the
      * same thing on the study screen, in the deck list and in the stats, so it has to look the
      * same in all three.

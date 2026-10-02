@@ -10,10 +10,12 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,6 +34,7 @@ import com.layerbit.abhyas.ui.components.PrimaryButton
 import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
 import java.util.concurrent.TimeUnit
+import kotlin.math.roundToInt
 
 @Composable
 fun StudyScreen(deckId: Long, onDone: () -> Unit) {
@@ -54,12 +57,24 @@ fun StudyScreen(deckId: Long, onDone: () -> Unit) {
                 fontSize = 14.sp,
                 modifier = Modifier.clickable(onClick = onDone)
             )
-            if (!state.finished && !state.loading) {
-                Text(
-                    text = "${state.remaining} left",
-                    color = AbhyasColors.Dim,
-                    fontSize = 13.sp
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (state.canUndo) {
+                    Text(
+                        text = "Undo",
+                        color = AbhyasColors.Saffron,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.clickable(onClick = viewModel::undo)
+                    )
+                    Spacer(Modifier.width(16.dp))
+                }
+                if (!state.finished && !state.loading) {
+                    Text(
+                        text = "${state.remaining} left",
+                        color = AbhyasColors.Dim,
+                        fontSize = 13.sp
+                    )
+                }
             }
         }
 
@@ -118,17 +133,21 @@ fun StudyScreen(deckId: Long, onDone: () -> Unit) {
                 Spacer(Modifier.height(16.dp))
 
                 if (state.answerShown) {
-                    GradeButtons(onGrade = viewModel::answer)
+                    GradeButtons(previews = state.previews, onGrade = viewModel::answer)
                 } else {
                     PrimaryButton("Show answer", onClick = viewModel::showAnswer)
                 }
             }
         }
     }
+
+    state.leechWarning?.let { warning ->
+        LeechNotice(message = warning, onDismiss = viewModel::dismissLeechWarning)
+    }
 }
 
 @Composable
-private fun GradeButtons(onGrade: (Grade) -> Unit) {
+private fun GradeButtons(previews: Map<Grade, Int>, onGrade: (Grade) -> Unit) {
     // Again and Good sit at the outside edges, where thumbs land. They are the two answers that
     // account for nearly every review; Hard and Easy are the deliberate ones and can be reached.
     val grades = listOf(
@@ -142,6 +161,10 @@ private fun GradeButtons(onGrade: (Grade) -> Unit) {
         grades.forEach { (grade, color) ->
             GradeButton(
                 label = grade.label,
+                // What this button actually costs. "Good" meaning three weeks and "Easy" meaning
+                // three months is the choice the user is really making, and showing it is what
+                // turns a blind self-grade into an informed one.
+                interval = previews[grade]?.let(::shortInterval),
                 color = color,
                 modifier = Modifier.weight(1f),
                 onClick = { onGrade(grade) }
@@ -151,17 +174,57 @@ private fun GradeButtons(onGrade: (Grade) -> Unit) {
 }
 
 @Composable
-private fun GradeButton(label: String, color: Color, modifier: Modifier, onClick: () -> Unit) {
-    Box(
+private fun GradeButton(
+    label: String,
+    interval: String?,
+    color: Color,
+    modifier: Modifier,
+    onClick: () -> Unit
+) {
+    Column(
         modifier = modifier
-            .height(54.dp)
+            .height(60.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(color.copy(alpha = 0.16f))
             .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
         Text(label, color = color, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold)
+        if (interval != null) {
+            Spacer(Modifier.height(2.dp))
+            Text(interval, color = color.copy(alpha = 0.72f), fontSize = 11.sp)
+        }
     }
+}
+
+/** "3d", "2w", "4mo", "1.5y" - short enough to sit under a button on a narrow phone. */
+private fun shortInterval(days: Int): String = when {
+    days < 7 -> "${days}d"
+    days < 30 -> "${(days / 7.0).roundToInt()}w"
+    days < 365 -> "${(days / 30.0).roundToInt()}mo"
+    else -> {
+        val years = days / 365.0
+        if (years < 10) "${"%.1f".format(years)}y" else "${years.roundToInt()}y"
+    }
+}
+
+@Composable
+private fun LeechNotice(message: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = AbhyasColors.Surface,
+        title = { Text("Set aside", fontWeight = FontWeight.Bold) },
+        text = { Text(message, color = AbhyasColors.Muted, fontSize = 14.sp, lineHeight = 20.sp) },
+        confirmButton = {
+            Text(
+                text = "Got it",
+                color = AbhyasColors.Saffron,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.clickable(onClick = onDismiss).padding(12.dp)
+            )
+        }
+    )
 }
 
 @Composable

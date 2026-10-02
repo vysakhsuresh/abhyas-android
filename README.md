@@ -183,24 +183,87 @@ Most of the quality is in the refusals, and each one is there because it produce
 
 ## Scheduling
 
-SM-2 — SuperMemo 2, the algorithm Anki is built on — with short in-session learning steps in
-front of it.
+**FSRS-5**, the Free Spaced Repetition Scheduler — the same algorithm Anki made its default — with
+short in-session learning steps in front of it.
 
-Plain SM-2 sends a brand-new card straight to a one-day interval the first time you answer it,
-which reads as broken to anyone learning something for the first time: you see a card once, say
-Good, and it vanishes for a day. So new cards move through minute-scale steps (1 min, 10 min)
-and only graduate to day-scale scheduling once they have actually been recalled.
+Abhyas shipped SM-2 first and that was a mistake worth correcting. SM-2 is forty years old and
+tracks one number per card, an "ease factor" it multiplies the interval by. It therefore cannot
+tell the difference between a card you answered the day it was due and the same card answered
+three months late. FSRS models memory with two numbers instead:
 
-A card you forget drops back to those short steps but **keeps its history** — its interval is
-halved rather than reset, so one bad day does not throw away three months of work.
+| | |
+|---|---|
+| **Stability** | days until your chance of recall falls to 90% |
+| **Difficulty** | how hard this card is *for you*, 1–10 |
+| **Retrievability** | derived at review time: the probability you still know it, right now |
 
-`Scheduler` is a pure function of its inputs, with no database, no clock and no Android. That is
-what makes the arithmetic testable, and `SchedulerTest` pins down interval growth, the ease
-floor, lapse handling and the interval cap — a mistake here would be close to invisible, since
-nobody notices an interval that is 30% too long until months of studying have been wasted.
+That third one is what SM-2 has no concept of, and three things follow from it:
 
-Worth knowing: SM-2's ease delta for **Good is exactly zero**. Good is the neutral answer; only
-Hard and Easy move a card's ease.
+1. **Answering late is rewarded, not punished.** Recalling a card 120 days after it was due
+   proves far more than recalling it on time, and the next interval reflects that — 217 days
+   versus 90 for the identical card. SM-2 gives the same answer either way. Anyone who studies in
+   bursts around exams lives in this case.
+2. **Fewer reviews for the same retention**, because the model is fitted to millions of real
+   reviews rather than assumed.
+3. **Retention is a dial, not an outcome.** Ask for 90% and you get the interval that achieves
+   it; ask for 95% and the intervals shorten. Under SM-2, retention was whatever fell out.
+
+The weights are the published FSRS-5 defaults, deliberately untuned — per-user optimisation needs
+a review history to fit against, and the defaults already beat anything hand-chosen.
+
+**Learning steps are kept.** FSRS alone sends a brand-new card answered Good straight out to
+three days, which reads as broken to someone learning something for the first time. Minutes
+first, days once it has actually been recalled.
+
+**Collections created before the change are converted, not reset.** The old interval becomes
+stability and the old ease factor becomes a difficulty. The mapping is approximate and allowed to
+be — the alternative was resetting every card to new, throwing away exactly the history it is
+reconstructing.
+
+`Scheduler` and `Fsrs` are pure functions of their inputs, with no database, no clock and no
+Android. Expected values in the tests come from the published formulas, not from running the
+implementation and writing down what it said — a test built that way would have passed just as
+happily on the SM-2 version it replaced.
+
+### Leeches
+
+Forget a card eight times and it is not a memory problem any more — the card is written badly or
+is trying to hold too much at once. Reaching the threshold **suspends it** and surfaces it on the
+Insights screen for rewriting. Left alone, one leech comes back every few days forever, soaking
+up review time and teaching the user that the app wastes it.
+
+### Undo
+
+Mis-tapping Easy when you meant Again is the most common mistake in any review app, and without
+undo it silently costs months of correct scheduling on that card — damage the user cannot see and
+would not know how to repair. One step only, deliberately: the mistake this exists for is always
+the answer you just gave. It restores the card *and* deletes the log row, so a review taken back
+stops counting towards the streak and the retention figure too.
+
+### What the buttons say
+
+Each grade button shows the interval it would actually schedule — `3d`, `2w`, `4mo`. Computed by
+running the real scheduler four times, so what the button says is exactly what pressing it does.
+"Good" meaning three weeks and "Easy" meaning three months is the choice the user is really
+making.
+
+## Insights
+
+| | |
+|---|---|
+| **Retention** | share of the last 30 days' answers recalled, against the 90% target — the number that says whether the schedule is pitched right for *this* user |
+| **Maturity** | where the collection sits: unseen, learning, under three weeks, sticking |
+| **Forecast** | how many cards fall due on each of the next 14 days |
+| **Leeches** | the cards set aside, with a way to put them back |
+
+The forecast is the one most students will feel: seeing a wall of reviews on Thursday while it is
+still Monday is the difference between planning and being ambushed.
+
+The chart colours were re-stepped into the dark-mode lightness band and checked with a palette
+validator rather than by eye. The obvious choice — reusing the existing accent colours directly —
+failed on lightness and read as four pastels against the surface, and the muted purple failed the
+chroma floor by rendering as grey. Colour-blind separation passes for deutan and protan but is
+tight for tritan, so every segment carries a direct label: identity is never on colour alone.
 
 ## Project layout
 
@@ -211,7 +274,8 @@ kept in step by hand, which is cheaper at this size than a shared library nobody
 app/src/main/java/com/layerbit/abhyas/
   data/
     db/          Room: decks, cards, an append-only review log
-    srs/         Scheduler - SM-2 plus learning steps, pure and unit-tested
+    srs/         Fsrs - the FSRS-5 memory model, pure
+                 Scheduler - the state machine around it, pure and unit-tested
     ocr/         PageTextReader - ML Kit per script, and the sentence rebuilding
                  ScriptOption / ScriptProfile - every language-specific rule, in one place
     generate/    CardGenerator interface + the heuristic implementation
@@ -224,7 +288,9 @@ app/src/main/java/com/layerbit/abhyas/
     decks/       Deck list with due and new counts, and the streak
     deck/        One deck: counts, study, add cards, browse every card
     capture/     Camera -> reading -> review -> saved, as one screen with four states
-    study/       The review loop and the four grade buttons
+    study/       The review loop, grade buttons that show their intervals, undo
+    insights/    Retention, maturity, the 14-day forecast, leeches
+    search/      One field across every deck
     settings/    Reminder consent and time, export and restore
     about/       Practice stats, the privacy story, support links
     theme/       Palette and Space Grotesk
@@ -263,7 +329,7 @@ Five test classes, all of them covering things that fail *silently*:
 
 | Test | Guards against |
 |---|---|
-| `SchedulerTest` | An interval 30% wrong is invisible until months of study are wasted |
+| `SchedulerTest` | An interval 30% wrong is invisible until months of study are wasted — and it pins FSRS against the published formulas, not against itself |
 | `HeuristicCardGeneratorTest` | Every case is a bug that reached the working tree — wrong cards, or a whole pass quietly not firing |
 | `StreakTest` | A streak counter that reads zero every morning talks people out of their own habit |
 | `BackupCodecTest` | The file is the only thing between a user and losing a collection with a phone |
@@ -295,3 +361,8 @@ Known limits, none of which are oversights:
   direct cost of having no account and no network, and a deliberate trade.
 - **Card generation is heuristic.** A language model would write better questions. `CardGenerator`
   is a one-method interface so that stays a decision rather than a rewrite.
+- **FSRS weights are the defaults, not fitted to you.** Optimising them per user needs a few
+  hundred reviews to fit against and an optimiser to run; the defaults are already strong, and
+  this is the obvious next step once a collection has history.
+- **No image occlusion.** Hiding labels on a photographed diagram is the one thing Anki does that
+  fits this app's camera-first premise better than it fits Anki's, and it is not built yet.
