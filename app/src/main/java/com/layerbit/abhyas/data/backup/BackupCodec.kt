@@ -4,6 +4,7 @@ import com.layerbit.abhyas.data.db.CardEntity
 import com.layerbit.abhyas.data.db.DeckEntity
 import com.layerbit.abhyas.data.model.CardState
 import com.layerbit.abhyas.data.ocr.ScriptOption
+import com.layerbit.abhyas.data.srs.Fsrs
 import com.layerbit.abhyas.data.srs.Scheduler
 import org.json.JSONArray
 import org.json.JSONObject
@@ -108,6 +109,26 @@ object BackupCodec {
         val cards = root.optJSONArray("cards").orEmpty().mapObjects { obj ->
             val front = obj.optString("front").takeIf { it.isNotBlank() } ?: return@mapObjects null
             val back = obj.optString("back").takeIf { it.isNotBlank() } ?: return@mapObjects null
+
+            val state = runCatching { CardState.valueOf(obj.optString("state")) }
+                .getOrDefault(CardState.NEW)
+            val interval = obj.optInt("intervalDays")
+            val ease = obj.optDouble("easeFactor", Scheduler.LEGACY_STARTING_EASE)
+                .takeIf { !it.isNaN() } ?: Scheduler.LEGACY_STARTING_EASE
+
+            // A file written before FSRS carries no stability or difficulty, and it is stamped with
+            // the same format version as a current one, so it cannot be told apart by its header.
+            // Defaulting those to zero left every restored card *untracked*, which means the first
+            // answer discards the scheduling and starts the card over - the restore appeared to work,
+            // and the history quietly evaporated one card at a time as the user studied.
+            //
+            // The conversion is the same one MIGRATION_2_3 performs, and for the same reason: the old
+            // interval and ease are a usable approximation of stability and difficulty, and the
+            // alternative is throwing away the history being restored. `interval > 0` matters here
+            // exactly as it does in the migration - a card that was mid-learning has no day-scale
+            // interval to convert and must stay untracked so its next answer initialises it properly.
+            val (stability, difficulty) = convertedMemory(obj, state, interval, ease)
+
             CardEntity(
                 deckId = obj.optLong("deckId"),
                 front = front,
@@ -123,18 +144,13 @@ object BackupCodec {
                 } else {
                     obj.optString("sourceText").takeIf { it.isNotBlank() }
                 },
-                state = runCatching { CardState.valueOf(obj.optString("state")) }
-                    .getOrDefault(CardState.NEW),
+                state = state,
                 dueAt = obj.optLong("dueAt"),
-                intervalDays = obj.optInt("intervalDays"),
-                // A file written before FSRS carries none of these three. Zero is exactly what a
-                // pre-FSRS row holds in the database too, and the scheduler converts from the ease
-                // factor when it sees it - so the fallback here is the migration path, not a loss.
-                stability = obj.optDouble("stability", 0.0).takeIf { !it.isNaN() } ?: 0.0,
-                difficulty = obj.optDouble("difficulty", 0.0).takeIf { !it.isNaN() } ?: 0.0,
+                intervalDays = interval,
+                stability = stability,
+                difficulty = difficulty,
                 lastReviewedAt = obj.optLong("lastReviewedAt"),
-                easeFactor = obj.optDouble("easeFactor", Scheduler.LEGACY_STARTING_EASE)
-                    .takeIf { !it.isNaN() } ?: Scheduler.LEGACY_STARTING_EASE,
+                easeFactor = ease,
                 repetitions = obj.optInt("repetitions"),
                 lapses = obj.optInt("lapses"),
                 learningStep = obj.optInt("learningStep"),
@@ -144,6 +160,29 @@ object BackupCodec {
         }
 
         return Backup(decks, cards)
+    }
+
+    /**
+     * The card's FSRS memory state: as written if the file has it, converted from SM-2 if not.
+     *
+     * Returns 0.0 to 0.0 - deliberately untracked - for a card that has no day-scale interval to
+     * convert, which is every NEW card and anything caught mid-learning.
+     */
+    private fun convertedMemory(
+        obj: JSONObject,
+        state: CardState,
+        intervalDays: Int,
+        easeFactor: Double
+    ): Pair<Double, Double> {
+        val stability = obj.optDouble("stability", 0.0).takeIf { !it.isNaN() } ?: 0.0
+        val difficulty = obj.optDouble("difficulty", 0.0).takeIf { !it.isNaN() } ?: 0.0
+
+        return when {
+            stability > 0.0 && difficulty > 0.0 -> stability to difficulty
+            state != CardState.NEW && intervalDays > 0 ->
+                Fsrs.fromSuperMemo(intervalDays, easeFactor)
+            else -> 0.0 to 0.0
+        }
     }
 
     /** A filename someone can recognise a month later in a folder of downloads. */

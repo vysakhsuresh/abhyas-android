@@ -14,6 +14,13 @@ import kotlin.math.roundToInt
  * how long it would take a user to notice, that testability is the point.
  */
 data class Scheduling(
+    /**
+     * The card's row id, used only to spread intervals apart. See [Scheduler.fuzz].
+     *
+     * Zero for a card that has no row yet, which simply means its fuzz is drawn from the interval
+     * alone - the scheduler never reads this for anything else, so it stays a pure function.
+     */
+    val id: Long = 0L,
     val state: CardState = CardState.NEW,
     /** Epoch millis at which the card should next be shown. */
     val dueAt: Long = 0L,
@@ -243,7 +250,7 @@ object Scheduler {
                 stability = memory.stability,
                 difficulty = memory.difficulty,
                 lastReviewedAt = now,
-                intervalDays = intervalDays(memory.stability, retention),
+                intervalDays = intervalDays(memory.stability, retention, current.id),
                 repetitions = 0,
                 lapses = current.lapses + 1,
                 learningStep = 0,
@@ -291,7 +298,7 @@ object Scheduler {
         now: Long,
         retention: Double
     ): Scheduling {
-        val days = intervalDays(memory.stability, retention)
+        val days = intervalDays(memory.stability, retention, id)
         return copy(
             state = CardState.REVIEW,
             stability = memory.stability,
@@ -304,9 +311,34 @@ object Scheduler {
         )
     }
 
-    /** Whole days from a stability, clamped to something a human schedule can contain. */
-    private fun intervalDays(stability: Double, retention: Double): Int =
-        Fsrs.intervalFor(stability, retention)
-            .roundToInt()
+    /** Whole days from a stability, spread a little, clamped to what a human schedule can contain. */
+    private fun intervalDays(stability: Double, retention: Double, id: Long): Int =
+        fuzz(Fsrs.intervalFor(stability, retention).roundToInt(), id)
             .coerceIn(MINIMUM_REVIEW_INTERVAL_DAYS, MAXIMUM_INTERVAL_DAYS)
+
+    /**
+     * Spread an interval by up to 5%, so cards learned together stop arriving together.
+     *
+     * FSRS is deterministic, which means twenty new cards answered Good twice in one sitting all
+     * carry the same stability and all land on the same day - and then on the same day again, and
+     * again. A student who studies one evening a week builds their own backlog that way: every
+     * session's intake returns as a single block.
+     *
+     * Seeded from the card and the interval together, not from the card alone. A per-card offset
+     * would push the same card the same direction at every review and compound into a real drift;
+     * mixing the interval in re-draws it each time while keeping it a pure function of its inputs -
+     * which is what lets the grade buttons preview the interval that pressing them will actually
+     * produce, since the preview runs this same code.
+     *
+     * Left alone below three days: the learning steps are measured in minutes and the first couple
+     * of day-scale reviews are too short to spread without changing what they mean.
+     */
+    private fun fuzz(days: Int, id: Long): Int {
+        if (days < 3) return days
+
+        val spread = (days * 0.05).toLong().coerceAtLeast(1L)
+        val scrambled = (id * 31 + days) * 0x5DEECE66DL
+        val offset = ((scrambled ushr 16).mod(2 * spread + 1)) - spread
+        return days + offset.toInt()
+    }
 }

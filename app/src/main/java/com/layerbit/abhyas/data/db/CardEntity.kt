@@ -73,6 +73,7 @@ data class CardEntity(
 ) {
     /** Read the scheduling fields out as the value the [Scheduler] operates on. */
     fun scheduling(): Scheduling = Scheduling(
+        id = id,
         state = state,
         dueAt = dueAt,
         intervalDays = intervalDays,

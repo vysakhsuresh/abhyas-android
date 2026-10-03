@@ -9,6 +9,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import androidx.lifecycle.Lifecycle
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -61,56 +63,66 @@ fun AbhyasApp() {
             )
         }
 
-        composable(Routes.DECK, arguments = listOf(navArgument("deckId") { type = NavType.LongType })) {
-            val deckId = it.arguments?.getLong("deckId") ?: return@composable
+        composable(Routes.DECK, arguments = listOf(navArgument("deckId") { type = NavType.LongType })) { entry ->
+            val deckId = entry.arguments?.getLong("deckId") ?: return@composable
             DeckScreen(
                 deckId = deckId,
                 onStudy = { navController.navigate(Routes.study(deckId)) },
                 onAddCards = { navController.navigate(Routes.capture(deckId)) },
-                onBack = navController::popBackStackSafely,
-                onDeleted = navController::popBackStackSafely
+                onBack = { entry.popFrom(navController) },
+                onDeleted = { entry.popFrom(navController) }
             )
         }
 
-        composable(Routes.STUDY, arguments = listOf(navArgument("deckId") { type = NavType.LongType })) {
-            val deckId = it.arguments?.getLong("deckId") ?: return@composable
-            StudyScreen(deckId = deckId, onDone = navController::popBackStackSafely)
+        composable(Routes.STUDY, arguments = listOf(navArgument("deckId") { type = NavType.LongType })) { entry ->
+            val deckId = entry.arguments?.getLong("deckId") ?: return@composable
+            StudyScreen(deckId = deckId, onDone = { entry.popFrom(navController) })
         }
 
-        composable(Routes.CAPTURE, arguments = listOf(navArgument("deckId") { type = NavType.LongType })) {
-            val deckId = it.arguments?.getLong("deckId") ?: return@composable
-            CaptureScreen(deckId = deckId, onDone = navController::popBackStackSafely)
+        composable(Routes.CAPTURE, arguments = listOf(navArgument("deckId") { type = NavType.LongType })) { entry ->
+            val deckId = entry.arguments?.getLong("deckId") ?: return@composable
+            CaptureScreen(deckId = deckId, onDone = { entry.popFrom(navController) })
         }
 
-        composable(Routes.ABOUT) {
-            AboutScreen(onBack = navController::popBackStackSafely)
+        composable(Routes.ABOUT) { entry ->
+            AboutScreen(onBack = { entry.popFrom(navController) })
         }
 
-        composable(Routes.SETTINGS) {
+        composable(Routes.SETTINGS) { entry ->
             SettingsScreen(
-                onBack = navController::popBackStackSafely,
+                onBack = { entry.popFrom(navController) },
                 onAbout = { navController.navigate(Routes.ABOUT) }
             )
         }
 
-        composable(Routes.INSIGHTS) {
-            InsightsScreen(onBack = navController::popBackStackSafely)
+        composable(Routes.INSIGHTS) { entry ->
+            InsightsScreen(onBack = { entry.popFrom(navController) })
         }
 
-        composable(Routes.SEARCH) {
-            SearchScreen(onBack = navController::popBackStackSafely)
+        composable(Routes.SEARCH) { entry ->
+            SearchScreen(onBack = { entry.popFrom(navController) })
         }
     }
 }
 
 /**
- * Back that cannot pop the last entry.
+ * Go back from *this* screen, exactly once.
  *
- * A double tap on a Done button fires the callback twice, and the second pop would empty the back
- * stack and leave a blank Activity behind. Guarding here rather than debouncing every call site.
+ * A double tap on a Close or Done button fires the callback twice: popBackStack updates the back
+ * queue synchronously, but NavHost keeps the outgoing composable composed and hit-testable for the
+ * length of its exit transition, so the second tap lands on a screen that has already left.
+ *
+ * The previous guard tested `previousBackStackEntry != null`, which only prevents emptying the stack
+ * - not what the double tap actually does. From the study screen, the first pop lands on the deck,
+ * whose own previous entry is the decks list and still non-null, so the second pop fired too and the
+ * user was thrown past the deck they had just been studying.
+ *
+ * Checking the entry that owns the callback is what discriminates, and it has to be equality with
+ * RESUMED rather than `isAtLeast(STARTED)`: a popped entry is held at STARTED while its exit
+ * transition runs, which is precisely the window the second tap arrives in.
  */
-private fun NavHostController.popBackStackSafely() {
-    if (previousBackStackEntry != null) popBackStack()
+private fun NavBackStackEntry.popFrom(navController: NavHostController) {
+    if (lifecycle.currentState == Lifecycle.State.RESUMED) navController.popBackStack()
 }
 
 /**

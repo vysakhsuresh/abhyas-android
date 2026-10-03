@@ -202,8 +202,15 @@ class AbhyasRepository(context: Context) {
 
     fun maturity(): Flow<Maturity> = cards.maturity()
 
+    /**
+     * The next [days] calendar days of work, counted from local midnight rather than from now.
+     *
+     * startOfToday is the same helper the reminder uses, reused deliberately: the chart's first bar
+     * is labelled "Today", so its buckets have to be days on a calendar and not rolling 24-hour
+     * windows measured from whenever the screen was opened.
+     */
     fun forecast(days: Int = 14): Flow<List<ForecastDay>> =
-        atSubscription { cards.forecast(it, days) }
+        flow { emitAll(cards.forecast(startOfToday(), days)) }
 
     fun retentionInLast(days: Int): Flow<RetentionCount> =
         atSubscription { log.retention(it - inDays(days)) }

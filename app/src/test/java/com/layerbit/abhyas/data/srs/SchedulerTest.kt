@@ -24,6 +24,23 @@ class SchedulerTest {
 
     private fun newCard() = Scheduling()
 
+    /**
+     * Assert a scheduled interval against the model's figure, allowing the scheduler's 5% spread.
+     *
+     * The spread is deliberate - see [Scheduler.fuzz] - so these cannot be exact any more. The band
+     * is still narrow enough for what these tests exist to catch: a weight indexed off by one or a
+     * sign error in the model moves an interval by tens of percent, not by three days. The
+     * accompanying stability assertions are untouched and remain exact, and they are where the
+     * arithmetic itself is really pinned.
+     */
+    private fun assertInterval(expected: Int, actual: Int) {
+        val spread = (expected * 0.05).toInt().coerceAtLeast(1)
+        assertTrue(
+            "expected about $expected days (+-$spread), was $actual",
+            actual in (expected - spread)..(expected + spread)
+        )
+    }
+
     /** A card with established memory state, last answered [daysAgo] days before [now]. */
     private fun mature(stability: Double, difficulty: Double, daysAgo: Int) = Scheduling(
         state = CardState.REVIEW,
@@ -100,7 +117,7 @@ class SchedulerTest {
         val result = Scheduler.next(newCard(), Grade.EASY, now)
 
         assertEquals(CardState.REVIEW, result.state)
-        assertEquals(16, result.intervalDays)
+        assertInterval(16, result.intervalDays)
     }
 
     @Test
@@ -120,7 +137,7 @@ class SchedulerTest {
         val result = Scheduler.next(mature(30.0, 5.0, daysAgo = 30), Grade.GOOD, now)
 
         assertEquals(CardState.REVIEW, result.state)
-        assertEquals(90, result.intervalDays)
+        assertInterval(90, result.intervalDays)
         assertEquals(90.41, result.stability, 0.05)
         assertEquals(6, result.repetitions)
     }
@@ -133,8 +150,8 @@ class SchedulerTest {
         val onTime = Scheduler.next(mature(30.0, 5.0, daysAgo = 30), Grade.GOOD, now)
         val late = Scheduler.next(mature(30.0, 5.0, daysAgo = 120), Grade.GOOD, now)
 
-        assertEquals(90, onTime.intervalDays)
-        assertEquals(217, late.intervalDays)
+        assertInterval(90, onTime.intervalDays)
+        assertInterval(217, late.intervalDays)
         assertTrue(
             "a late success must schedule further out",
             late.intervalDays > onTime.intervalDays
@@ -282,6 +299,50 @@ class SchedulerTest {
         val result = Scheduler.next(migrated, Grade.GOOD, now)
 
         assertTrue("a converted card must not explode to years", result.intervalDays in 46..250)
+    }
+
+    @Test
+    fun `cards learned together do not all come back on the same day`() {
+        // FSRS is deterministic, so twenty cards graded identically in one sitting carry identical
+        // stability and would land on one day - and then on one day again. A student who studies one
+        // evening a week was building their own backlog that way, a block per session.
+        val days = (1L..40L).map { id ->
+            Scheduler.next(mature(30.0, 5.0, daysAgo = 30).copy(id = id), Grade.GOOD, now).intervalDays
+        }
+
+        assertTrue("forty identical cards must not land on one day", days.distinct().size > 1)
+    }
+
+    @Test
+    fun `the spread is a pure function, so a grade button can preview what it will do`() {
+        // The grade buttons show the interval by running this same scheduler, so the fuzz has to be
+        // reproducible for a given card and interval - otherwise the button would promise three weeks
+        // and the press would schedule something else.
+        val card = mature(30.0, 5.0, daysAgo = 30).copy(id = 77L)
+
+        val preview = Scheduler.next(card, Grade.GOOD, now)
+        val answer = Scheduler.next(card, Grade.GOOD, now)
+
+        assertEquals(preview.intervalDays, answer.intervalDays)
+        assertEquals(preview.dueAt, answer.dueAt)
+    }
+
+    @Test
+    fun `the spread never shortens an interval below the floor or past the cap`() {
+        for (id in 1L..200L) {
+            val short = Scheduler.next(mature(1.0, 5.0, daysAgo = 1).copy(id = id), Grade.AGAIN, now)
+            assertTrue("interval must stay positive, was ${short.intervalDays}", short.intervalDays >= 1)
+
+            val long = Scheduler.next(
+                mature(100_000.0, 1.0, daysAgo = 100_000).copy(id = id),
+                Grade.EASY,
+                now
+            )
+            assertTrue(
+                "interval must stay within the cap, was ${long.intervalDays}",
+                long.intervalDays <= Scheduler.MAXIMUM_INTERVAL_DAYS
+            )
+        }
     }
 
     @Test

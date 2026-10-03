@@ -223,16 +223,24 @@ interface CardDao {
     fun maturity(): Flow<Maturity>
 
     /**
-     * How many cards fall due on each of the next [days] days.
+     * How many cards fall due on each of the next [days] days, counting from local midnight.
      *
      * The forecast is what turns "you have 40 reviews today" into something a student can plan
      * around - a wall of work on Thursday is worth knowing about on Monday.
+     *
+     * [from] must be the start of today, not the current instant: the chart labels its first bucket
+     * "Today" and paints it as today, so the buckets have to be calendar days. Measured from "now"
+     * instead, every boundary fell at whatever time of day the screen happened to be opened.
+     *
+     * MAX(..., 0) rather than `dueAt >= :from`, so anything already overdue folds into today's bar.
+     * Excluding it meant the one group of users who most need a forecast - anyone carrying a backlog,
+     * which is the normal case - saw their backlog missing from it entirely.
      */
     @Query(
         """
-        SELECT CAST((dueAt - :from) / 86400000 AS INTEGER) AS dayOffset, COUNT(*) AS count
+        SELECT CAST(MAX((dueAt - :from) / 86400000, 0) AS INTEGER) AS dayOffset, COUNT(*) AS count
           FROM cards
-         WHERE suspended = 0 AND state != 'NEW' AND dueAt >= :from
+         WHERE suspended = 0 AND state != 'NEW'
            AND dueAt < :from + (:days * 86400000)
          GROUP BY dayOffset
          ORDER BY dayOffset ASC
