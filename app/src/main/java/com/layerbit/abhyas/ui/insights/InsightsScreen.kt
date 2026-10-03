@@ -247,7 +247,7 @@ private fun ForecastCard(forecast: List<ForecastDay>) {
 
         if (peak == 0) {
             Text(
-                "Nothing scheduled yet.",
+                "Nothing due in the next two weeks.",
                 color = AbhyasColors.Muted,
                 fontSize = 14.sp
             )
@@ -307,7 +307,9 @@ private fun ForecastCard(forecast: List<ForecastDay>) {
 /** The forecast's one useful sentence: when the heaviest day falls, and how heavy. */
 private fun busiestDay(days: List<Int>): String {
     val peak = days.maxOrNull() ?: 0
-    if (peak == 0) return "Nothing scheduled yet."
+    // "scheduled" would be a lie: a card put away for a month is scheduled, it is just not in
+    // this window, and the card above counts exactly fourteen days.
+    if (peak == 0) return "Nothing due in the next two weeks."
 
     val cards = if (peak == 1) "1 card" else "$peak cards"
     return when (val index = days.indexOf(peak)) {
