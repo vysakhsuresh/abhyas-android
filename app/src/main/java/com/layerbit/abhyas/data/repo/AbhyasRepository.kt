@@ -10,6 +10,7 @@ import com.layerbit.abhyas.data.db.DeckEntity
 import com.layerbit.abhyas.data.db.DeckSummary
 import com.layerbit.abhyas.data.db.ForecastDay
 import com.layerbit.abhyas.data.db.Maturity
+import com.layerbit.abhyas.data.db.MergeTarget
 import com.layerbit.abhyas.data.db.RetentionCount
 import com.layerbit.abhyas.data.db.ReviewLogEntity
 import com.layerbit.abhyas.data.generate.CardCandidate
@@ -20,6 +21,8 @@ import com.layerbit.abhyas.data.srs.Scheduler
 import java.util.Calendar
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext
 
@@ -33,11 +36,10 @@ class AbhyasRepository(context: Context) {
 
     // ------------------------------------------------------------------------------------ decks
 
-    fun deckSummaries(now: Long = System.currentTimeMillis()): Flow<List<DeckSummary>> =
-        decks.summaries(now)
+    fun deckSummaries(): Flow<List<DeckSummary>> = atSubscription { decks.summaries(it) }
 
-    fun deckSummary(deckId: Long, now: Long = System.currentTimeMillis()): Flow<DeckSummary?> =
-        decks.summary(deckId, now)
+    fun deckSummary(deckId: Long): Flow<DeckSummary?> =
+        atSubscription { decks.summary(deckId, it) }
 
     suspend fun createDeck(name: String, script: ScriptOption = ScriptOption.DEFAULT): Long {
         val now = System.currentTimeMillis()
@@ -54,6 +56,11 @@ class AbhyasRepository(context: Context) {
     suspend fun setDeckScript(deckId: Long, script: ScriptOption) {
         decks.byId(deckId)?.let { decks.update(it.copy(script = script)) }
     }
+
+    /** Whether this deck has anywhere to merge into. Cheap enough to keep observed. */
+    fun otherDeckCount(deckId: Long): Flow<Int> = decks.countOthers(deckId)
+
+    suspend fun mergeTargets(deckId: Long): List<MergeTarget> = decks.mergeTargets(deckId)
 
     suspend fun deckScript(deckId: Long): ScriptOption =
         decks.byId(deckId)?.script ?: ScriptOption.DEFAULT
@@ -178,9 +185,10 @@ class AbhyasRepository(context: Context) {
 
     // ------------------------------------------------------------------------------------ stats
 
-    fun reviewsSince(since: Long): Flow<Int> = log.countSince(since)
+    fun reviewsInLast(days: Int): Flow<Int> = atSubscription { log.countSince(it - inDays(days)) }
 
-    fun dailyCounts(since: Long): Flow<List<DailyCount>> = log.dailyCounts(since)
+    fun dailyCountsInLast(days: Int): Flow<List<DailyCount>> =
+        atSubscription { log.dailyCounts(it - inDays(days)) }
 
     fun totalReviews(): Flow<Int> = log.totalReviews()
 
@@ -195,9 +203,30 @@ class AbhyasRepository(context: Context) {
     fun maturity(): Flow<Maturity> = cards.maturity()
 
     fun forecast(days: Int = 14): Flow<List<ForecastDay>> =
-        cards.forecast(System.currentTimeMillis(), days)
+        atSubscription { cards.forecast(it, days) }
 
-    fun retention(since: Long): Flow<RetentionCount> = log.retention(since)
+    fun retentionInLast(days: Int): Flow<RetentionCount> =
+        atSubscription { log.retention(it - inDays(days)) }
+
+    /**
+     * A query whose SQL embeds the current time, re-read every time the flow is *subscribed*.
+     *
+     * The timestamp used to come from a default argument, which is evaluated once when the ViewModel
+     * builds the flow - and Room only re-runs a query when its tables change, never on a clock
+     * boundary. So the "due" counts on the decks list were pinned to the instant the ViewModel was
+     * constructed, which for the start destination is once per process: leave Abhyas open overnight
+     * and it would still be showing yesterday evening's numbers, with a comment claiming they
+     * refreshed on re-entry. Wrapping the call in a flow builder moves the clock read into the
+     * subscription, so `WhileSubscribed` dropping and restoring it on screen exit and re-entry
+     * re-evaluates the counts - which is what that comment always promised.
+     *
+     * It also keeps the property the comment was protecting: within one sitting the subscription is
+     * continuous, so the list cannot re-sort under a finger reaching for a deck.
+     */
+    private fun <T> atSubscription(query: (Long) -> Flow<T>): Flow<T> =
+        flow { emitAll(query(System.currentTimeMillis())) }
+
+    private fun inDays(days: Int): Long = days * 86_400_000L
 
     // ------------------------------------------------------------------------------ reminders
 

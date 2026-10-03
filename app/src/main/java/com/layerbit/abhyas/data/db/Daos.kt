@@ -21,6 +21,13 @@ data class DeckSummary(
     val newCount: Int
 )
 
+/** A deck as the merge dialog needs it: what to call it, and how much is in it. */
+data class MergeTarget(
+    val id: Long,
+    val name: String,
+    val total: Int
+)
+
 @Dao
 interface DeckDao {
 
@@ -65,6 +72,33 @@ interface DeckDao {
         """
     )
     fun summaries(now: Long): Flow<List<DeckSummary>>
+
+    /**
+     * How many other decks exist. Drives nothing but whether the "Merge" link is shown.
+     *
+     * Deliberately not `summaries().map { it.size }`. That query carries three correlated counts over
+     * the whole `cards` table per deck, and observing it registers an invalidation watch on `cards` -
+     * so the deck screen re-ran the entire collection's aggregate every time the user edited a single
+     * card, to answer a question about `decks` alone.
+     */
+    @Query("SELECT COUNT(*) FROM decks WHERE id != :deckId")
+    fun countOthers(deckId: Long): Flow<Int>
+
+    /**
+     * The decks this one could be folded into, loaded once when the merge dialog opens.
+     *
+     * One shot rather than a Flow: the list is read while a modal is on screen, so there is nothing
+     * to keep live, and a snapshot cannot re-order under the finger picking from it.
+     */
+    @Query(
+        """
+        SELECT d.id, d.name,
+               (SELECT COUNT(*) FROM cards c WHERE c.deckId = d.id) AS total
+        FROM decks d WHERE d.id != :deckId
+        ORDER BY d.lastUsedAt DESC
+        """
+    )
+    suspend fun mergeTargets(deckId: Long): List<MergeTarget>
 
     @Query(
         """

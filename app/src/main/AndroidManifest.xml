@@ -68,6 +68,21 @@
             </intent-filter>
         </activity>
 
+        <!--
+            Puts the daily reminder back on the user's wall clock after the clock moves under it - a
+            flight across time zones, or a DST boundary. The pending job carries a fixed delay, so
+            without this it arrives at the old instant rather than the chosen time. Not exported:
+            both actions are system broadcasts and nothing else has any business sending them.
+        -->
+        <receiver
+            android:name=".data.reminder.ClockChangeReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

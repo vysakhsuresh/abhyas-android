@@ -17,6 +17,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -38,9 +41,7 @@ import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -48,8 +49,18 @@ import kotlinx.coroutines.flow.stateIn
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 class SearchViewModel(repository: AbhyasRepository) : ViewModel() {
 
-    private val _term = MutableStateFlow("")
-    val term = _term.asStateFlow()
+    /**
+     * The query, as Compose snapshot state rather than a StateFlow.
+     *
+     * A text field has to read back the value it was just given *within the same frame*. Routed
+     * through a StateFlow and `collectAsStateWithLifecycle`, it did not: that collection resumes on
+     * AndroidUiDispatcher.Main, i.e. on the next Choreographer frame, so for the rest of the current
+     * one the field still held the previous string - and a text field pushes its composed value back
+     * to the IME, telling it a text that disagreed with the edit just committed. On a fast typist or
+     * a predictive keyboard that is where dropped and reordered characters come from.
+     */
+    var term by mutableStateOf("")
+        private set
 
     /**
      * Results, debounced.
@@ -58,21 +69,24 @@ class SearchViewModel(repository: AbhyasRepository) : ViewModel() {
      * query the earlier requests can land after the later ones and leave the list showing results
      * for a prefix the user has already finished typing. flatMapLatest cancels the stale one;
      * the debounce stops most of them being started at all.
+     *
+     * `snapshotFlow` emits when the snapshot is applied, so the debounce window and flatMapLatest
+     * cancellation behave exactly as they did reading from a StateFlow.
      */
-    val results = _term
+    val results = snapshotFlow { term }
         .debounce(180)
         .flatMapLatest { repository.search(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun search(value: String) {
-        _term.value = value
+        term = value
     }
 }
 
 @Composable
 fun SearchScreen(onBack: () -> Unit) {
     val viewModel = repositoryViewModel { SearchViewModel(it) }
-    val term by viewModel.term.collectAsStateWithLifecycle()
+    val term = viewModel.term
     val results by viewModel.results.collectAsStateWithLifecycle()
 
     LazyColumn(

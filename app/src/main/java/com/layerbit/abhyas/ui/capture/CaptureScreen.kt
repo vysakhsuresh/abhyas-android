@@ -41,6 +41,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -142,6 +143,17 @@ private fun CameraStep(
 
     LaunchedEffect(Unit) {
         if (!hasPermission) requestPermission.launch(Manifest.permission.CAMERA)
+    }
+
+    // Release the camera when this step leaves composition.
+    //
+    // bindToLifecycle ties the session to the NavBackStackEntry, which stays RESUMED for the whole
+    // capture route - so without this the sensor kept streaming through OCR and through the entire
+    // review screen, where the user may be reading and editing for minutes, into a PreviewView that
+    // is no longer attached to anything. It was only released when the route was finally popped.
+    // Retaking rebinds, which is what the camera step does on re-entry anyway.
+    DisposableEffect(camera) {
+        onDispose { camera.unbind() }
     }
 
     Column(
@@ -378,6 +390,20 @@ private fun ReviewStep(
 private fun ReviewCard(item: ReviewItem, onToggle: () -> Unit, onEdit: (String, String) -> Unit) {
     var editing by remember { mutableStateOf(false) }
 
+    // Each side keeps its own text, rather than reading it back out of the ViewModel's StateFlow.
+    //
+    // Two problems with the round trip. A keystroke went to the ViewModel and came back through
+    // collectAsStateWithLifecycle, which resumes on the next frame - so the field was being handed a
+    // value one frame behind what the user had just typed, which the text field then pushes back to
+    // the IME as a correction. And because `onEdit` takes both sides, each lambda had to resend its
+    // sibling from the captured `item`: edit the question against a stale `item` and the pre-edit
+    // answer was written back over whatever the answer had become.
+    //
+    // Keyed on item.id, so the state follows the right row through the keyed list and is rebuilt
+    // when setAllKept replaces every ReviewItem instance.
+    var front by rememberSaveable(item.id) { mutableStateOf(item.front) }
+    var back by rememberSaveable(item.id) { mutableStateOf(item.back) }
+
     Card {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -391,9 +417,15 @@ private fun ReviewCard(item: ReviewItem, onToggle: () -> Unit, onEdit: (String, 
         Spacer(Modifier.height(12.dp))
 
         if (editing) {
-            EditableSide(label = "Question", value = item.front) { onEdit(it, item.back) }
+            EditableSide(label = "Question", value = front) {
+                front = it
+                onEdit(it, back)
+            }
             Spacer(Modifier.height(10.dp))
-            EditableSide(label = "Answer", value = item.back) { onEdit(item.front, it) }
+            EditableSide(label = "Answer", value = back) {
+                back = it
+                onEdit(front, it)
+            }
             Spacer(Modifier.height(10.dp))
             TextLink(
                 text = "Done editing",
@@ -410,7 +442,7 @@ private fun ReviewCard(item: ReviewItem, onToggle: () -> Unit, onEdit: (String, 
                     }
             ) {
                 Text(
-                    text = item.front,
+                    text = front,
                     fontSize = 15.5.sp,
                     fontWeight = FontWeight.Medium,
                     color = if (item.keep) AbhyasColors.Text else AbhyasColors.Dim,
@@ -418,7 +450,7 @@ private fun ReviewCard(item: ReviewItem, onToggle: () -> Unit, onEdit: (String, 
                 )
                 Spacer(Modifier.height(7.dp))
                 Text(
-                    text = item.back,
+                    text = back,
                     fontSize = 14.sp,
                     color = if (item.keep) AbhyasColors.Muted else AbhyasColors.Dim,
                     lineHeight = 20.sp

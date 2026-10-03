@@ -51,7 +51,6 @@ import com.layerbit.abhyas.ui.components.TextLink
 import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
 import java.time.LocalDate
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -60,9 +59,9 @@ import kotlinx.coroutines.launch
 class DecksViewModel(private val repository: AbhyasRepository) : ViewModel() {
 
     /**
-     * Due counts are computed against a "now" captured when the flow is built, so the list does
-     * not silently re-sort under the user's finger while they are reaching for a deck. It
-     * refreshes when the screen is next entered, which is the moment the numbers actually matter.
+     * Due counts are computed against the clock as it was when the screen was entered, so the list
+     * does not silently re-sort under the user's finger while they are reaching for a deck - and they
+     * are re-evaluated on the next entry, which is the moment the numbers actually matter.
      */
     val decks = repository.deckSummaries()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -74,7 +73,7 @@ class DecksViewModel(private val repository: AbhyasRepository) : ViewModel() {
      * loading a user's entire review log to draw one number would get slower every month.
      */
     val streak = repository
-        .dailyCounts(System.currentTimeMillis() - TimeUnit.DAYS.toMillis(90))
+        .dailyCountsInLast(days = 90)
         .map { counts ->
             Streak.current(Streak.parseDays(counts.map { it.day }), LocalDate.now())
         }

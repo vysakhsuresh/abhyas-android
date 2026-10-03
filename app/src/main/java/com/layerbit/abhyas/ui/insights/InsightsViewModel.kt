@@ -6,15 +6,12 @@ import com.layerbit.abhyas.data.db.CardEntity
 import com.layerbit.abhyas.data.repo.AbhyasRepository
 import com.layerbit.abhyas.data.stats.Streak
 import java.time.LocalDate
-import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
 class InsightsViewModel(private val repository: AbhyasRepository) : ViewModel() {
-
-    private val monthAgo = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(30)
 
     /**
      * Thirty days rather than all time.
@@ -23,7 +20,7 @@ class InsightsViewModel(private val repository: AbhyasRepository) : ViewModel() 
      * average is dominated by the weeks when the user was still learning how to grade honestly,
      * and stops moving at all once there is enough history - which makes it useless as a signal.
      */
-    val retention = repository.retention(monthAgo)
+    val retention = repository.retentionInLast(days = 30)
         .map { it.rate }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -37,7 +34,7 @@ class InsightsViewModel(private val repository: AbhyasRepository) : ViewModel() 
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     val streak = repository
-        .dailyCounts(System.currentTimeMillis() - TimeUnit.DAYS.toMillis(90))
+        .dailyCountsInLast(days = 90)
         .map { counts -> Streak.current(Streak.parseDays(counts.map { it.day }), LocalDate.now()) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 

@@ -35,19 +35,18 @@ import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
-import java.util.concurrent.TimeUnit
 
 class AboutViewModel(repository: AbhyasRepository) : ViewModel() {
-
-    private val weekAgo = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(7)
 
     val totalReviews = repository.totalReviews()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
-    val reviewsThisWeek = repository.reviewsSince(weekAgo)
+    // The window is named in days rather than pinned to a timestamp here, so "this week" still means
+    // the last seven days when the screen is opened again tomorrow.
+    val reviewsThisWeek = repository.reviewsInLast(days = 7)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
-    val activeDays = repository.dailyCounts(weekAgo)
+    val activeDays = repository.dailyCountsInLast(days = 7)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 }
 

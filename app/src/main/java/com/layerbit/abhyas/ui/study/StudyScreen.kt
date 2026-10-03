@@ -94,7 +94,14 @@ fun StudyScreen(deckId: Long, onDone: () -> Unit) {
             state.card != null -> {
                 val card = state.card!!
 
-                Column(modifier = Modifier.weight(1f).verticalScroll(rememberScrollState())) {
+                // Keyed on the card, so the scroll position is discarded with it. Grading keeps this
+                // same `when` branch selected, so one ScrollState was being reused for the whole
+                // sitting - scroll to the bottom of a long card, grade it, and the next card opened
+                // already scrolled past its own question.
+                val scroll = rememberScrollState()
+                LaunchedEffect(card.id) { scroll.scrollTo(0) }
+
+                Column(modifier = Modifier.weight(1f).verticalScroll(scroll)) {
                     Card {
                         Text(
                             text = card.front,

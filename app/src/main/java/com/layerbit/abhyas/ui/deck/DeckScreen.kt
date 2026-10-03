@@ -41,6 +41,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.layerbit.abhyas.data.db.CardEntity
 import com.layerbit.abhyas.data.db.DeckSummary
+import com.layerbit.abhyas.data.db.MergeTarget
 import com.layerbit.abhyas.data.model.CardState
 import com.layerbit.abhyas.data.ocr.ScriptOption
 import com.layerbit.abhyas.data.repo.AbhyasRepository
@@ -76,10 +77,23 @@ class DeckViewModel(
         viewModelScope.launch { repository.deleteCard(card) }
     }
 
-    /** Other decks this one could be folded into. Never includes itself. */
-    val otherDecks = repository.deckSummaries()
-        .map { all -> all.filter { it.id != deckId } }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    /**
+     * Whether there is anywhere to merge into - the only thing the header link needs to know.
+     *
+     * This used to observe the whole collection's aggregate query and call `isNotEmpty()` on it,
+     * which put a third live query over `cards` on this screen and re-ran every deck's counts
+     * whenever the user edited one card.
+     */
+    val otherDeckCount = repository.otherDeckCount(deckId)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    /** Loaded when the merge dialog opens, rather than kept live behind it. */
+    var mergeTargets by mutableStateOf<List<MergeTarget>>(emptyList())
+        private set
+
+    fun loadMergeTargets() {
+        viewModelScope.launch { mergeTargets = repository.mergeTargets(deckId) }
+    }
 
     fun rename(name: String) {
         if (name.isBlank()) return
@@ -130,7 +144,7 @@ fun DeckScreen(
     val viewModel = repositoryViewModel(key = "deck-$deckId") { DeckViewModel(it, deckId) }
     val summary by viewModel.summary.collectAsStateWithLifecycle()
     val cards by viewModel.cards.collectAsStateWithLifecycle()
-    val otherDecks by viewModel.otherDecks.collectAsStateWithLifecycle()
+    val otherDeckCount by viewModel.otherDeckCount.collectAsStateWithLifecycle()
 
     var confirmingDelete by remember { mutableStateOf(false) }
     var changingScript by remember { mutableStateOf(false) }
@@ -151,8 +165,11 @@ fun DeckScreen(
             ) {
                 TextLink("Back", AbhyasColors.Muted, onBack)
                 Row {
-                    if (otherDecks.isNotEmpty()) {
-                        TextLink("Merge", AbhyasColors.Muted, { merging = true })
+                    if (otherDeckCount > 0) {
+                        TextLink("Merge", AbhyasColors.Muted, {
+                            viewModel.loadMergeTargets()
+                            merging = true
+                        })
                         Spacer(Modifier.width(4.dp))
                     }
                     TextLink("Delete", AbhyasColors.Again, { confirmingDelete = true })
@@ -227,7 +244,7 @@ fun DeckScreen(
     if (merging) {
         MergeDeckDialog(
             sourceName = summary?.name.orEmpty(),
-            destinations = otherDecks,
+            destinations = viewModel.mergeTargets,
             onMerge = { destination ->
                 merging = false
                 viewModel.mergeInto(destination, onDeleted)
@@ -602,7 +619,7 @@ private fun RenameDeckDialog(
 @Composable
 private fun MergeDeckDialog(
     sourceName: String,
-    destinations: List<DeckSummary>,
+    destinations: List<MergeTarget>,
     onMerge: (Long) -> Unit,
     onDismiss: () -> Unit
 ) {
