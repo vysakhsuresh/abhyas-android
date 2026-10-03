@@ -66,6 +66,9 @@ object BackupCodec {
                     put("state", card.state.name)
                     put("dueAt", card.dueAt)
                     put("intervalDays", card.intervalDays)
+                    put("stability", card.stability)
+                    put("difficulty", card.difficulty)
+                    put("lastReviewedAt", card.lastReviewedAt)
                     put("easeFactor", card.easeFactor)
                     put("repetitions", card.repetitions)
                     put("lapses", card.lapses)
@@ -114,8 +117,14 @@ object BackupCodec {
                     .getOrDefault(CardState.NEW),
                 dueAt = obj.optLong("dueAt"),
                 intervalDays = obj.optInt("intervalDays"),
-                easeFactor = obj.optDouble("easeFactor", Scheduler.STARTING_EASE)
-                    .takeIf { !it.isNaN() } ?: Scheduler.STARTING_EASE,
+                // A file written before FSRS carries none of these three. Zero is exactly what a
+                // pre-FSRS row holds in the database too, and the scheduler converts from the ease
+                // factor when it sees it - so the fallback here is the migration path, not a loss.
+                stability = obj.optDouble("stability", 0.0).takeIf { !it.isNaN() } ?: 0.0,
+                difficulty = obj.optDouble("difficulty", 0.0).takeIf { !it.isNaN() } ?: 0.0,
+                lastReviewedAt = obj.optLong("lastReviewedAt"),
+                easeFactor = obj.optDouble("easeFactor", Scheduler.LEGACY_STARTING_EASE)
+                    .takeIf { !it.isNaN() } ?: Scheduler.LEGACY_STARTING_EASE,
                 repetitions = obj.optInt("repetitions"),
                 lapses = obj.optInt("lapses"),
                 learningStep = obj.optInt("learningStep"),

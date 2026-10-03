@@ -27,13 +27,17 @@ data class StudyState(
     /** Whether the last answer can still be taken back. */
     val canUndo: Boolean = false,
     /**
-     * What each button would schedule, in days, for the card on screen.
+     * How long each button would put the card away for, in milliseconds from now.
      *
      * Shown on the buttons themselves. It turns a blind self-grade into an informed one - "Good"
      * meaning three weeks and "Easy" meaning three months is the difference the user is actually
      * choosing between, and no other app on a phone tells them before they tap.
+     *
+     * A duration rather than `intervalDays`, because a card in learning is due again in minutes
+     * and its interval in whole days is zero - which rendered three of the four buttons as an
+     * identical, useless "0d" on exactly the reviews a new card spends most of its life in.
      */
-    val previews: Map<Grade, Int> = emptyMap(),
+    val previews: Map<Grade, Long> = emptyMap(),
     /** Set when an answer just suspended a card for being forgotten too often. */
     val leechWarning: String? = null
 )
@@ -167,11 +171,11 @@ class StudyViewModel(
      * button says is exactly what pressing it does. Cheap - FSRS is a handful of floating point
      * operations and this runs once per card, not per frame.
      */
-    private fun previewsFor(card: CardEntity): Map<Grade, Int> {
+    private fun previewsFor(card: CardEntity): Map<Grade, Long> {
         val now = System.currentTimeMillis()
         val scheduling = card.scheduling()
         return Grade.entries.associateWith { grade ->
-            Scheduler.next(scheduling, grade, now).intervalDays
+            (Scheduler.next(scheduling, grade, now).dueAt - now).coerceAtLeast(0L)
         }
     }
 }

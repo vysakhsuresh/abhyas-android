@@ -22,6 +22,7 @@ import androidx.lifecycle.viewModelScope
 import com.layerbit.abhyas.BuildConfig
 import com.layerbit.abhyas.brand.BrandLinks
 import com.layerbit.abhyas.data.repo.AbhyasRepository
+import com.layerbit.abhyas.ui.components.screenPadding
 import com.layerbit.abhyas.ui.components.Card
 import com.layerbit.abhyas.ui.components.ScreenTitle
 import com.layerbit.abhyas.ui.components.StatRow
@@ -56,7 +57,7 @@ fun AboutScreen(onBack: () -> Unit) {
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 56.dp, bottom = 32.dp),
+        contentPadding = screenPadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {

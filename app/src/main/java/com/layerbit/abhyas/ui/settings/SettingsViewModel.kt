@@ -87,7 +87,7 @@ class SettingsViewModel(
             val ok = runCatching { write(BackupCodec.encode(backup)) }.getOrDefault(false)
             _state.value = _state.value.copy(
                 message = if (ok) {
-                    "Exported ${backup.decks.size} decks and ${backup.cards.size} cards."
+                    "Exported ${count(backup.decks.size, "deck")} and ${count(backup.cards.size, "card")}."
                 } else {
                     "Could not write the backup file."
                 }
@@ -111,7 +111,7 @@ class SettingsViewModel(
             }
             val (decks, cards) = repository.restoreBackup(backup)
             _state.value = _state.value.copy(
-                message = "Restored $decks decks and $cards cards alongside what you had."
+                message = "Restored ${count(decks, "deck")} and ${count(cards, "card")} alongside what you had."
             )
         }
     }
@@ -120,3 +120,6 @@ class SettingsViewModel(
         _state.value = _state.value.copy(message = null)
     }
 }
+
+/** "1 deck", "3 decks" - the backup messages read as a sentence a person wrote. */
+private fun count(n: Int, noun: String): String = if (n == 1) "1 $noun" else "$n ${noun}s"

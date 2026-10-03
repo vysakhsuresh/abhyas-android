@@ -27,6 +27,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.layerbit.abhyas.data.db.CardEntity
 import com.layerbit.abhyas.data.repo.AbhyasRepository
+import com.layerbit.abhyas.ui.components.screenPadding
 import com.layerbit.abhyas.ui.components.Card
 import com.layerbit.abhyas.ui.components.EmptyState
 import com.layerbit.abhyas.ui.components.Pill
@@ -74,7 +75,7 @@ fun SearchScreen(onBack: () -> Unit) {
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 56.dp, bottom = 32.dp),
+        contentPadding = screenPadding(),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {

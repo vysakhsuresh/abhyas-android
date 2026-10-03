@@ -7,11 +7,15 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,6 +25,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.layerbit.abhyas.ui.theme.AbhyasColors
@@ -158,4 +163,26 @@ fun StatRow(stats: List<Pair<String, String>>, modifier: Modifier = Modifier) {
             }
         }
     }
+}
+
+/**
+ * The edge padding every screen uses.
+ *
+ * [MainActivity] draws edge to edge, so clearing the system bars is ours to do. A fixed `top =
+ * 56.dp` only happened to clear the status bar on the phone it was written on, and a fixed bottom
+ * put the study screen's grade buttons - the one control the whole app exists for - underneath
+ * the navigation bar. Measuring the bars keeps the intended spacing on every device instead.
+ *
+ * [extraBottom] is the breathing room *below* the navigation bar inset, which is what the old
+ * hardcoded bottom value was really expressing.
+ */
+@Composable
+fun screenPadding(extraBottom: Dp = 32.dp, extraTop: Dp = 18.dp): PaddingValues {
+    val bars = WindowInsets.systemBars.asPaddingValues()
+    return PaddingValues(
+        start = 20.dp,
+        end = 20.dp,
+        top = bars.calculateTopPadding() + extraTop,
+        bottom = bars.calculateBottomPadding() + extraBottom
+    )
 }

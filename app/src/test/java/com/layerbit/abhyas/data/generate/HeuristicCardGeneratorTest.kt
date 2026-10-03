@@ -108,7 +108,7 @@ class HeuristicCardGeneratorTest {
         // produces the better card anyway, by blanking the date.
         val result = cards(englishPage, ScriptProfile.Latin)
 
-        assertNull(result.withFront("What is The process?"))
+        assertNull(result.withFront("What is the process?"))
         val cloze = result.firstOrNull { it.back == "1779" }
         assertNotNull("the date is the thing worth remembering in that sentence", cloze)
         assertEquals(CardKind.CLOZE, cloze!!.kind)
@@ -332,7 +332,7 @@ class HeuristicCardGeneratorTest {
     fun `a line stolen as a wrong answer is still available as its own card`() {
         // The mitochondrion line was consumed as a bogus answer, so its own good card vanished.
         val mitochondrion = cardsFrom(photographedPage)
-            .firstOrNull { it.front == "What is The mitochondrion?" }
+            .firstOrNull { it.front == "What is the mitochondrion?" }
 
         assertNotNull("the page defines it, so it should be offered", mitochondrion)
         assertEquals("the powerhouse of the cell", mitochondrion!!.back)
@@ -418,14 +418,14 @@ class HeuristicCardGeneratorTest {
 
     @Test
     fun `The plus a generic noun is not a definable term`() {
-        // "The generator is heuristic, so tell me..." became "What is The generator?" - the
+        // "The generator is heuristic, so tell me..." became "What is the generator?" - the
         // reader has to already know which generator for the question to mean anything.
         val result = cards(
             listOf(listOf("The generator is heuristic and runs entirely on the device.")),
             ScriptProfile.Latin
         )
 
-        assertNull(result.withFront("What is The generator?"))
+        assertNull(result.withFront("What is the generator?"))
     }
 
     @Test
@@ -436,7 +436,21 @@ class HeuristicCardGeneratorTest {
             ScriptProfile.Latin
         )
 
-        assertNotNull(result.withFront("What is The mitochondrion?"))
+        assertNotNull(result.withFront("What is the mitochondrion?"))
+    }
+
+    @Test
+    fun `an article does not carry its sentence capital into the question`() {
+        // Shipped bug, seen on a photographed page of physics notes: the term only has a capital
+        // because it started the sentence it was lifted from, and "What is The focal length?"
+        // reads mid-question as a typo. An article is never a proper noun, so it is safe to lower.
+        val result = cards(
+            listOf(listOf("The focal length is the distance from the lens to its focus.")),
+            ScriptProfile.Latin
+        )
+
+        assertNotNull(result.withFront("What is the focal length?"))
+        assertNull(result.withFront("What is The focal length?"))
     }
 
     // ------------------------------------------------------------------------------------ shared

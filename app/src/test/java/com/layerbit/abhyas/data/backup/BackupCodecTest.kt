@@ -33,6 +33,9 @@ class BackupCodecTest {
         state = CardState.REVIEW,
         dueAt = 1_700_100_000_000,
         intervalDays = 21,
+        stability = 20.74,
+        difficulty = 5.31,
+        lastReviewedAt = 1_698_300_000_000,
         easeFactor = 2.36,
         repetitions = 5,
         lapses = 2,
@@ -61,6 +64,11 @@ class BackupCodecTest {
         assertEquals(card.state, restored.state)
         assertEquals(card.dueAt, restored.dueAt)
         assertEquals(card.intervalDays, restored.intervalDays)
+        // FSRS keeps its memory in these three, so they are now as load-bearing as the interval:
+        // dropping them would restore the card as one FSRS has never seen before.
+        assertEquals(card.stability, restored.stability, 0.0001)
+        assertEquals(card.difficulty, restored.difficulty, 0.0001)
+        assertEquals(card.lastReviewedAt, restored.lastReviewedAt)
         assertEquals(card.easeFactor, restored.easeFactor, 0.0001)
         assertEquals(card.repetitions, restored.repetitions)
         assertEquals(card.lapses, restored.lapses)
@@ -133,8 +141,11 @@ class BackupCodecTest {
         val restored = BackupCodec.decode(minimal).cards.single()
 
         assertEquals(CardState.NEW, restored.state)
-        assertEquals(Scheduler.STARTING_EASE, restored.easeFactor, 0.0001)
+        assertEquals(Scheduler.LEGACY_STARTING_EASE, restored.easeFactor, 0.0001)
         assertEquals(0, restored.intervalDays)
+        assertEquals(0.0, restored.stability, 0.0001)
+        assertEquals(0.0, restored.difficulty, 0.0001)
+        assertEquals(0L, restored.lastReviewedAt)
     }
 
     @Test

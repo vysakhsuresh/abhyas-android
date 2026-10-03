@@ -190,10 +190,18 @@ sealed class ScriptProfile(val script: ScriptOption) {
          */
         private val notActuallyPlural = listOf("ss", "us", "is", "sis", "ous")
 
+        /**
+         * Articles only ever carry a capital because they started the sentence we lifted the term
+         * out of. Mid-question that capital reads as a mistake - "What is The focal length?" - and
+         * unlike a bare noun an article is never a proper noun, so lowering it is always safe.
+         */
+        private val leadingArticle = Regex("""^(the|a|an)\b""", RegexOption.IGNORE_CASE)
+
         override fun definitionQuestion(term: String, plural: Boolean?): String {
             val looksPlural = plural
                 ?: (term.endsWith("s") && notActuallyPlural.none { term.lowercase().endsWith(it) })
-            return if (looksPlural) "What are $term?" else "What is $term?"
+            val phrase = leadingArticle.replace(term) { it.value.lowercase() }
+            return if (looksPlural) "What are $phrase?" else "What is $phrase?"
         }
 
         /**

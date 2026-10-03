@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.layerbit.abhyas.data.backup.BackupCodec
+import com.layerbit.abhyas.ui.components.screenPadding
 import com.layerbit.abhyas.ui.components.Card
 import com.layerbit.abhyas.ui.components.ScreenTitle
 import com.layerbit.abhyas.ui.repositoryViewModel
@@ -102,7 +103,7 @@ fun SettingsScreen(onBack: () -> Unit, onAbout: () -> Unit) {
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 56.dp, bottom = 32.dp),
+        contentPadding = screenPadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {

@@ -9,6 +9,10 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -49,6 +53,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.layerbit.abhyas.ui.components.screenPadding
 import com.layerbit.abhyas.ui.components.Card
 import com.layerbit.abhyas.ui.components.EmptyState
 import com.layerbit.abhyas.ui.components.Pill
@@ -136,7 +141,7 @@ private fun CameraStep(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(start = 20.dp, end = 20.dp, top = 56.dp, bottom = 28.dp)
+            .padding(screenPadding(extraBottom = 28.dp))
     ) {
         Text(
             text = "Cancel",
@@ -293,11 +298,16 @@ private fun ReviewStep(
 ) {
     val keptCount = items.count { it.keep }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    // Clearing the navigation bar is the outer Column's job here: the list scrolls, but the
+    // footer below it is fixed, and without this the "Add cards" button sits under the bar.
+    Column(modifier = Modifier.fillMaxSize().navigationBarsPadding()) {
         LazyColumn(
             modifier = Modifier.weight(1f),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                start = 20.dp, end = 20.dp, top = 56.dp, bottom = 12.dp
+                start = 20.dp,
+                end = 20.dp,
+                top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 18.dp,
+                bottom = 12.dp
             ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {

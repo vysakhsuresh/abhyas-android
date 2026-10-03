@@ -41,6 +41,7 @@ import com.layerbit.abhyas.data.db.DeckSummary
 import com.layerbit.abhyas.data.model.CardState
 import com.layerbit.abhyas.data.ocr.ScriptOption
 import com.layerbit.abhyas.data.repo.AbhyasRepository
+import com.layerbit.abhyas.ui.components.screenPadding
 import com.layerbit.abhyas.ui.components.Card
 import com.layerbit.abhyas.ui.components.EmptyState
 import com.layerbit.abhyas.ui.components.Pill
@@ -134,7 +135,7 @@ fun DeckScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 56.dp, bottom = 32.dp),
+        contentPadding = screenPadding(),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {

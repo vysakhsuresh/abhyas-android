@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.layerbit.abhyas.data.model.Grade
+import com.layerbit.abhyas.ui.components.screenPadding
 import com.layerbit.abhyas.ui.components.Card
 import com.layerbit.abhyas.ui.components.PrimaryButton
 import com.layerbit.abhyas.ui.repositoryViewModel
@@ -44,7 +45,7 @@ fun StudyScreen(deckId: Long, onDone: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(start = 20.dp, end = 20.dp, top = 56.dp, bottom = 24.dp)
+            .padding(screenPadding(extraBottom = 24.dp))
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -147,7 +148,7 @@ fun StudyScreen(deckId: Long, onDone: () -> Unit) {
 }
 
 @Composable
-private fun GradeButtons(previews: Map<Grade, Int>, onGrade: (Grade) -> Unit) {
+private fun GradeButtons(previews: Map<Grade, Long>, onGrade: (Grade) -> Unit) {
     // Again and Good sit at the outside edges, where thumbs land. They are the two answers that
     // account for nearly every review; Hard and Easy are the deliberate ones and can be reached.
     val grades = listOf(
@@ -198,14 +199,27 @@ private fun GradeButton(
     }
 }
 
-/** "3d", "2w", "4mo", "1.5y" - short enough to sit under a button on a narrow phone. */
-private fun shortInterval(days: Int): String = when {
-    days < 7 -> "${days}d"
-    days < 30 -> "${(days / 7.0).roundToInt()}w"
-    days < 365 -> "${(days / 30.0).roundToInt()}mo"
-    else -> {
-        val years = days / 365.0
-        if (years < 10) "${"%.1f".format(years)}y" else "${years.roundToInt()}y"
+/**
+ * "10m", "3d", "2w", "4mo", "1.5y" - short enough to sit under a button on a narrow phone.
+ *
+ * Minutes and hours matter as much as the longer units: a card in learning comes back in minutes,
+ * and rounding that down to whole days printed "0d" under three of the four buttons, hiding the
+ * very difference the preview exists to show.
+ */
+private fun shortInterval(millis: Long): String {
+    val minutes = millis / 60_000L
+    val days = (millis / 86_400_000L).toInt()
+    return when {
+        minutes < 1 -> "<1m"
+        minutes < 60 -> "${minutes}m"
+        minutes < 1440 -> "${(minutes / 60.0).roundToInt()}h"
+        days < 7 -> "${days}d"
+        days < 30 -> "${(days / 7.0).roundToInt()}w"
+        days < 365 -> "${(days / 30.0).roundToInt()}mo"
+        else -> {
+            val years = days / 365.0
+            if (years < 10) "${"%.1f".format(years)}y" else "${years.roundToInt()}y"
+        }
     }
 }
 
