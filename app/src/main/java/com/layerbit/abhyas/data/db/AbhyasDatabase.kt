@@ -93,6 +93,13 @@ abstract class AbhyasDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * Every migration, in one place so the builder below and the migration tests cannot disagree
+         * about which ones exist. A migration present here but forgotten in a test would be exactly
+         * the one that goes unchecked.
+         */
+        val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+
         fun get(context: Context): AbhyasDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
@@ -103,7 +110,7 @@ abstract class AbhyasDatabase : RoomDatabase() {
                 // must never be dropped to satisfy a schema bump. Every future version ships a
                 // real migration, and the exported schemas under app/schemas are what they get
                 // written against.
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(*MIGRATIONS)
                 .build()
                 .also { instance = it }
         }

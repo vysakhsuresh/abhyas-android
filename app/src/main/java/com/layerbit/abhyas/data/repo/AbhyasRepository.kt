@@ -26,10 +26,17 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.withContext
 
-/** Everything the UI is allowed to do to the collection. */
-class AbhyasRepository(context: Context) {
+/**
+ * Everything the UI is allowed to do to the collection.
+ *
+ * Takes the database rather than reaching for the singleton, so a test can hand it an in-memory one.
+ * The transactional writes below are the part of this app most worth testing and the part a fake
+ * repository cannot test at all - a fake has no transactions to roll back and no cascades to honour.
+ */
+class AbhyasRepository(private val db: AbhyasDatabase) {
 
-    private val db = AbhyasDatabase.get(context)
+    constructor(context: Context) : this(AbhyasDatabase.get(context))
+
     private val decks = db.deckDao()
     private val cards = db.cardDao()
     private val log = db.reviewLogDao()

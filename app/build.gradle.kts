@@ -28,6 +28,15 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Room's MigrationTestHelper reads the exported schemas from the test APK's assets, so the
+    // directory ksp writes them to has to be on the androidTest asset path. Without this the
+    // migration tests fail with "Cannot find the schema file" rather than anything informative.
+    sourceSets {
+        getByName("androidTest").assets.srcDir("$projectDir/schemas")
     }
 
     signingConfigs {
@@ -166,4 +175,13 @@ dependencies {
     // untestable without this. The backup file is the only thing standing between a user and
     // losing their whole collection with a phone, so it does not get to go untested.
     testImplementation("org.json:json:20240303")
+
+    // Instrumented tests, for the things a JVM test genuinely cannot reach: Room's migrations and
+    // its transactions. A migration that throws on upgrade destroys a collection, and the exported
+    // schemas under app/schemas are only worth having if something checks the migrations against
+    // them - which is what room-testing's MigrationTestHelper does.
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.room:room-testing:2.6.1")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")
 }
