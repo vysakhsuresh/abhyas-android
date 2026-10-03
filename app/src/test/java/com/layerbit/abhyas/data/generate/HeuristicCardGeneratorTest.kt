@@ -755,6 +755,33 @@ class HeuristicCardGeneratorTest {
     }
 
     @Test
+    fun `a CJK deck still spaces the English running through it`() {
+        // Found on a phone. These recognisers read the English in a Chinese textbook, and the
+        // no-space rule that is right between two Chinese characters is wrong in the middle of an
+        // English phrase: a line breaking between "generate" and "most" came back "generatemost".
+        val page = PageText.ofLines(
+            listOf(listOf("The mitochondria generate", "most of the energy a cell needs.")),
+            ScriptProfile.Cjk.Chinese
+        )
+
+        val joined = page.runs().first()
+        assertTrue("the wrap must not weld two English words: $joined", joined.contains("generate most"))
+    }
+
+    @Test
+    fun `a CJK wrap between two Chinese characters stays unspaced`() {
+        // The other half: inserting a space here would open a gap inside a word that was never
+        // broken, because Chinese does not space its words in the first place.
+        val page = PageText.ofLines(
+            listOf(listOf("光合作用是植物利用阳光", "制造养分的过程。")),
+            ScriptProfile.Cjk.Chinese
+        )
+
+        val joined = page.runs().first()
+        assertTrue("a Chinese wrap must not gain a space: $joined", joined.contains("阳光制造"))
+    }
+
+    @Test
     fun `a Chinese decimal is not split into two sentences`() {
         // The ASCII full stop sat in a zero-width lookbehind, and Pattern.split only skips a
         // zero-width match at offset zero - so every decimal point split the sentence, and both

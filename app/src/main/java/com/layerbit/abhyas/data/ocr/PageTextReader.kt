@@ -276,7 +276,8 @@ data class PageText(
                 sitsDirectlyBelow(previous, block.box)
 
             if (joins) {
-                previous.runs[previous.runs.lastIndex] = previousRun + profile.joiner + runs.first()
+                previous.runs[previous.runs.lastIndex] =
+                    previousRun + profile.joinerBetween(previousRun, runs.first()) + runs.first()
                 previous.runs += runs.drop(1)
                 // Advance to the block just absorbed, so the next candidate is measured from here.
                 previous.box = block.box
@@ -329,7 +330,6 @@ data class PageText(
     private fun runsIn(blockLines: List<String>): List<String> {
         val runs = mutableListOf<String>()
         val current = StringBuilder()
-        val joiner = profile.joiner
 
         for (line in blockLines) {
             if (current.isEmpty()) {
@@ -342,7 +342,8 @@ data class PageText(
                     current.setLength(current.length - 1)
                     current.append(line)
                 }
-                continues(previous, line) -> current.append(joiner).append(line)
+                continues(previous, line) ->
+                    current.append(profile.joinerBetween(previous, line)).append(line)
                 else -> {
                     runs += previous
                     current.setLength(0)

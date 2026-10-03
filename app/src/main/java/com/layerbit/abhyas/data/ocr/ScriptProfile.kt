@@ -35,6 +35,25 @@ sealed class ScriptProfile(val script: ScriptOption) {
     val joiner: String get() = if (wordSpaced) " " else ""
 
     /**
+     * What goes between [left] and [right] when a wrapped line is joined back together.
+     *
+     * [joiner] with one exception, and the exception is why this exists. Every CJK profile covers
+     * "Chinese (and Latin)" - these recognisers read the English that runs through a Chinese
+     * textbook - and the no-space rule that is right for Chinese is wrong in the middle of an
+     * English phrase. A page whose line broke between "generate" and "most" came back as
+     * "generatemost", because the rule looked at the script of the deck rather than at the
+     * characters either side of the break.
+     */
+    fun joinerBetween(left: String, right: String): String {
+        if (wordSpaced) return " "
+        val before = left.lastOrNull() ?: return ""
+        val after = right.firstOrNull() ?: return ""
+        return if (before.isLatinWord() && after.isLatinWord()) " " else ""
+    }
+
+    private fun Char.isLatinWord(): Boolean = this in 'A'..'Z' || this in 'a'..'z' || isDigit()
+
+    /**
      * Strip surrounding punctuation from a token without cutting into the word itself.
      *
      * `trim { !it.isLetterOrDigit() }` is the obvious way to write this, and it is wrong outside
