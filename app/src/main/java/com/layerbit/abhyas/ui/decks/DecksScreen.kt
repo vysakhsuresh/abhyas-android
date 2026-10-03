@@ -1,6 +1,7 @@
 package com.layerbit.abhyas.ui.decks
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -38,6 +39,7 @@ import com.layerbit.abhyas.data.db.DeckSummary
 import com.layerbit.abhyas.data.ocr.ScriptOption
 import com.layerbit.abhyas.data.repo.AbhyasRepository
 import com.layerbit.abhyas.data.stats.Streak
+import com.layerbit.abhyas.ui.components.screenPadding
 import com.layerbit.abhyas.ui.components.Card
 import com.layerbit.abhyas.ui.components.EmptyState
 import com.layerbit.abhyas.ui.components.Pill
@@ -98,9 +100,7 @@ fun DecksScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            start = 20.dp, end = 20.dp, top = 64.dp, bottom = 32.dp
-        ),
+        contentPadding = screenPadding(extraTop = 26.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
@@ -109,7 +109,11 @@ fun DecksScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.Top
             ) {
-                ScreenTitle("Abhyas", "Your notes ask the questions.")
+                // The title yields the width, because the links cannot: left to compete for it
+                // they were the half that gave way, and "More" wrapped to "Mor / e".
+                Box(modifier = Modifier.weight(1f)) {
+                    ScreenTitle("Abhyas", "Your notes ask the questions.")
+                }
                 // Four destinations is the most a header can hold before it stops being
                 // scannable, so About moves inside Settings rather than taking a fifth slot.
                 Row(modifier = Modifier.padding(top = 8.dp)) {
@@ -253,6 +257,10 @@ private fun HeaderLink(label: String, onClick: () -> Unit) {
         text = label,
         color = AbhyasColors.Muted,
         fontSize = 14.sp,
+        // A one-word destination that wraps is unreadable, and at a large display font these
+        // three together are wider than the header. Staying on one line is the lesser cost.
+        maxLines = 1,
+        softWrap = false,
         modifier = Modifier.clickable(onClick = onClick)
     )
 }
