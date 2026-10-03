@@ -126,11 +126,15 @@ guessing beats asking once.
 Every language-specific rule lives in `ScriptProfile`, not in the generator. Adding a sixth
 script is a new object plus a dependency line.
 
-> **APK size.** Each bundled recogniser is several MB and they are additive — all five add
-> roughly 30–40 MB. That is a real price on a cheap phone and a metered connection. To trim it,
-> delete the recogniser lines in `app/build.gradle.kts` and the matching `ScriptOption` /
-> `ScriptProfile` entries; nothing else refers to them. The proper fix when it starts to hurt is
-> Play Feature Delivery, with each non-default script as an on-demand module.
+> **APK size, measured rather than assumed.** The five recognisers are *not* additive in the way
+> you would expect: they share one native pipeline library, so all five models together come to
+> **5.2 MB** of assets — Latin 0.34, Devanagari 0.46, Chinese 0.96, Japanese 0.92, Korean 0.83.
+> Dropping a script buys well under a megabyte and costs a language, which is a bad trade.
+>
+> The weight is that shared library, at 6.5–11.1 MB *per ABI*, and a debug APK carries four
+> copies. The release build keeps only `arm64-v8a` and `armeabi-v7a`, which is every real phone;
+> the two x86 builds served emulators and a few Chromebooks and were 22 MB of the download.
+> Reach for Play Feature Delivery only if the asset total itself grows.
 
 ## How a page becomes cards
 
@@ -313,7 +317,10 @@ the right-hand stem.
 ## Requirements
 
 - Android Studio with an SDK for **compileSdk/targetSdk 36**
-- JDK 17
+- JDK 21 to run Gradle, pinned in `gradle/gradle-daemon-jvm.properties` so no one has to set
+  `JAVA_HOME`. Android Studio's bundled JBR is now JDK 25, which Gradle 8.11.1 will not start
+  on — from the command line that appears as a bare `25.0.3` failure with no further explanation.
+  The code itself still targets Java 17.
 - `minSdk` 26
 
 No `google-services.json` is required.
@@ -335,14 +342,15 @@ Five test classes, all of them covering things that fail *silently*:
 | `BackupCodecTest` | The file is the only thing between a user and losing a collection with a phone |
 | `ReminderSchedulerTest` | A reminder at the wrong hour still fires — nobody reports it, they just switch reminders off |
 
-This repository's sandbox had no Android SDK and no access to Google's Maven repo, so **the
-Gradle build has not been run end to end** — the source was written and reviewed by hand against
-the AndroidX, CameraX, Room and ML Kit APIs. Open the project in Android Studio and sync to pull
-dependencies and catch anything environment-specific.
+The build now runs end to end, and the app has been driven through its whole path on a moto
+g84 5G running Android 15: new deck, photograph a page, OCR, approve the suggestions, study a
+full session, undo, insights, search, export and restore. That run is what found the bugs in
+`44cf7d1` and `39921e7` — among them a backup file that carried none of FSRS's memory, so
+restoring a collection handed every card back as one the scheduler had never seen.
 
-The generator and scheduler logic *was* exercised: both were ported to a scratch script and run
+The generator and scheduler were exercised before that too, ported to a scratch script and run
 against a realistic OCR read of a textbook page, which is how four bugs — including one that
-stopped the highest-confidence pass firing at all — were found and fixed before the first commit.
+stopped the highest-confidence pass firing at all — were found before the first commit.
 
 ## Status
 

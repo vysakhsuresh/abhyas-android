@@ -44,10 +44,26 @@ android {
     buildTypes {
         release {
             isMinifyEnabled = true
+            // Unused drawables and strings pulled in by Compose, CameraX and ML Kit are a few
+            // megabytes that nothing on any screen ever draws.
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+
+            // ML Kit's OCR pipeline ships as a native library, and the APK carries one copy per
+            // ABI: 11.1 MB for x86_64, 11.1 for x86, 10.6 for arm64-v8a and 6.5 for armeabi-v7a.
+            // Every phone uses exactly one of them, and the two x86 builds exist for emulators
+            // and a handful of Chromebooks - 22 MB of a 56 MB download that no real user's phone
+            // will ever load. Debug keeps all four so the emulator still works.
+            //
+            // Play splits an App Bundle per ABI anyway, so this mainly buys a smaller direct
+            // APK; it also keeps the bundle itself from carrying weight nobody can use.
+            ndk {
+                abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+            }
+
             if (hasKeystoreProperties) {
                 signingConfig = signingConfigs.getByName("release")
             }
@@ -122,11 +138,13 @@ dependencies {
     // ships inside the APK, so OCR never needs a model download and works with no network at
     // all. That is the whole privacy position, and it is what these cost.
     //
-    // APK SIZE. Each model is several MB and they are additive - all five together add roughly
-    // 30-40 MB to the download. That is a real price on a cheap phone and a metered connection.
-    // To trim it, delete the recogniser lines you do not need here AND the matching entries in
-    // ScriptOption/ScriptProfile; nothing else refers to them. The proper fix when this starts
-    // to hurt is Play Feature Delivery, with each non-default script as an on-demand module.
+    // APK SIZE, measured rather than assumed. All five scripts' models together are 5.2 MB of
+    // assets - Latin 0.34, Devanagari 0.46, Chinese 0.96, Japanese 0.92, Korean 0.83 - because
+    // they share one native pipeline library instead of each bringing its own. So dropping a
+    // script buys well under a megabyte and costs a language: not the lever it looks like.
+    //
+    // The library is the weight, at 6.5-11.1 MB per ABI, and the release build's abiFilters is
+    // what cuts it. Reach for Play Feature Delivery only if the asset total itself grows.
     implementation("com.google.mlkit:text-recognition:16.0.1")
     implementation("com.google.mlkit:text-recognition-devanagari:16.0.1")
     implementation("com.google.mlkit:text-recognition-chinese:16.0.1")
