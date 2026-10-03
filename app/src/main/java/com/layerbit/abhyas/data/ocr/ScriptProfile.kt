@@ -35,6 +35,23 @@ sealed class ScriptProfile(val script: ScriptOption) {
     val joiner: String get() = if (wordSpaced) " " else ""
 
     /**
+     * Strip surrounding punctuation from a token without cutting into the word itself.
+     *
+     * `trim { !it.isLetterOrDigit() }` is the obvious way to write this, and it is wrong outside
+     * Latin. A Devanagari vowel sign is a *combining mark* rather than a letter - the `ा` in
+     * `प्रक्रिया` is category Mc - so that predicate trimmed it off the end, leaving the stem
+     * `प्रक्रिय`, which is not a word. The cloze pass then blanked that stem out of the sentence and
+     * left the orphaned sign stranded, printing `यह _____ा गर्मियों` and offering the non-word as the
+     * answer. Most Hindi words end in one of these signs, so this was most Hindi clozes.
+     */
+    protected fun String.trimToWord(): String = trim { !it.isWordCharacter() }
+
+    private fun Char.isWordCharacter(): Boolean =
+        isLetterOrDigit() ||
+            category == CharCategory.NON_SPACING_MARK ||
+            category == CharCategory.COMBINING_SPACING_MARK
+
+    /**
      * Shortest run worth making a card from. CJK is far denser per character than an alphabet,
      * so the same threshold would throw away perfectly good sentences.
      */
@@ -238,7 +255,7 @@ sealed class ScriptProfile(val script: ScriptOption) {
         override fun salientTerm(sentence: String): String? =
             sentence.split(WHITESPACE)
                 .drop(1)
-                .map { it.trim { c -> !c.isLetterOrDigit() } }
+                .map { it.trimToWord() }
                 .filter { it.length >= 4 && it.first().isUpperCase() }
                 .filterNot { it.lowercase() in stopwords }
                 .maxByOrNull { it.length }
@@ -301,7 +318,7 @@ sealed class ScriptProfile(val script: ScriptOption) {
          */
         override fun salientTerm(sentence: String): String? =
             sentence.split(WHITESPACE)
-                .map { it.trim { c -> !c.isLetterOrDigit() } }
+                .map { it.trimToWord() }
                 .filter { it.length >= 4 }
                 .filterNot { it in stopwords }
                 .maxByOrNull { it.length }

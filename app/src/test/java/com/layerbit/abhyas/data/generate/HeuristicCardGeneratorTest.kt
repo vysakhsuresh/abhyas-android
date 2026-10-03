@@ -6,6 +6,7 @@ import com.layerbit.abhyas.data.ocr.TextBox
 import com.layerbit.abhyas.data.ocr.ScriptProfile
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -710,6 +711,47 @@ class HeuristicCardGeneratorTest {
         val runs = page.runs()
         assertEquals("both blocks are one sentence", 1, runs.size)
         assertTrue("the continuation must survive: ${runs.first()}", runs.first().contains("भोजन"))
+    }
+
+    @Test
+    fun `a Hindi cloze blanks a whole word rather than cutting off its vowel sign`() {
+        // Found on a phone. A Devanagari vowel sign is a combining mark, not a letter, so trimming a
+        // token with `!isLetterOrDigit()` cut the `ा` off `प्रक्रिया` and left the stem `प्रक्रिय`.
+        // The blank was then made from the stem, stranding the sign in the question: the card read
+        // "यह _____ा गर्मियों में" and offered a non-word as its answer. Most Hindi words end in one
+        // of these signs, so this was most Hindi clozes.
+        val result = cards(
+            listOf(listOf("उत्तरी भारत में यह प्रक्रिया गर्मियों के महीनों में तेज़ होती है।")),
+            ScriptProfile.Devanagari
+        )
+
+        val cloze = result.firstOrNull { it.kind == CardKind.CLOZE }
+        assertNotNull("the sentence should still yield a cloze", cloze)
+        assertFalse(
+            "the blank must not strand a vowel sign: ${cloze!!.front}",
+            cloze.front.contains("_ा") || cloze.front.contains("_ि") || cloze.front.contains("_ी")
+        )
+        assertTrue(
+            "the answer must be a whole word, was \"${cloze.back}\"",
+            cloze.back == "प्रक्रिया" || !"उत्तरी भारत में यह प्रक्रिया".contains(cloze.back + "ा")
+        )
+    }
+
+    @Test
+    fun `a Hindi answer label is not stripped from a word that merely starts with it`() {
+        // The companion to the above, also confirmed on the phone: "उत्तरी" ("northern") begins with
+        // "उत्तर" ("answer"), and Devanagari has no case to tell them apart.
+        val result = cards(
+            listOf(listOf("उत्तरी भारत में यह प्रक्रिया गर्मियों के महीनों में तेज़ होती है।")),
+            ScriptProfile.Devanagari
+        )
+
+        result.forEach {
+            assertFalse(
+                "nothing may begin mid-word: \"${it.front}\"",
+                it.front.startsWith("ी") || it.back.startsWith("ी")
+            )
+        }
     }
 
     @Test
