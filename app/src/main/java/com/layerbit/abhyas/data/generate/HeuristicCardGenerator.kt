@@ -91,6 +91,12 @@ class HeuristicCardGenerator : CardGenerator {
                 }
 
             val answerAt = labelledAt ?: (index + 1)
+            // The lookahead above skips runs already claimed, but the fallback does not - so when
+            // the window turned up nothing new, answerAt landed back on the answer an earlier
+            // question had already taken. Because that run is still labelled, both guards below live
+            // in the `labelled == null` branch and were skipped, and the duplicate shipped at the
+            // top confidence. Two questions, the same answer, 0.98 each.
+            if (answerAt in consumed) return@forEachIndexed
             val following = runs.getOrNull(answerAt) ?: return@forEachIndexed
             val labelled = profile.answerPrefix.find(following)
 
@@ -130,10 +136,19 @@ class HeuristicCardGenerator : CardGenerator {
     // ------------------------------------------------------------------------------ definitions
 
     private fun definitions(sentences: List<String>, profile: ScriptProfile): List<CardCandidate> =
-        sentences.mapNotNull {
-            colonDefinition(it, profile)
-                ?: copulaDefinition(it, profile)
-                ?: meansDefinition(it, profile)
+        sentences.mapNotNull { original ->
+            // Strip the list marker before the passes see the sentence, and put the original back as
+            // the source text. A marker that contains a full stop is already removed by sentence
+            // splitting, but "•", "-" and "a)" are not, and they were landing inside the question:
+            // "What is • Chlorophyll?". Worse, every guard in these passes is anchored at the start
+            // of the string, so a bullet blinded them - `isDefiniteGeneric` tests `startsWith("the ")`
+            // and so passed "• The generator" straight through the generic-noun rejection it exists
+            // to enforce.
+            val clean = original.replaceFirst(PageText.BULLET, "").trim()
+            (colonDefinition(clean, profile)
+                ?: copulaDefinition(clean, profile)
+                ?: meansDefinition(clean, profile))
+                ?.copy(sourceText = original)
         }
 
     /**
@@ -281,10 +296,23 @@ class HeuristicCardGenerator : CardGenerator {
         prefixes.any { this == it || startsWith("$it ") }
 
     /** Add the script's own question mark, if the text does not already end in one. */
+    /**
+     * End the question in a question mark, replacing whatever terminator it already had.
+     *
+     * The old version only checked for an existing question mark and concatenated otherwise, which
+     * is wrong for most of what a textbook actually prints. Exercises are overwhelmingly imperative:
+     * "Q2. Define osmosis." becomes "Define osmosis." once the label is stripped, and that shipped
+     * as "Define osmosis.?". Hindi was the same with the danda - "... दीजिए।?" - since that is not a
+     * question mark either. It also returned the untrimmed receiver on the early-return path, so
+     * trailing whitespace from the OCR survived onto the front of the card.
+     */
     private fun String.ensureQuestionMark(profile: ScriptProfile): String {
-        val last = trimEnd().lastOrNull()
-        if (last != null && last in QUESTION_MARKS) return this
-        return this + if (profile.wordSpaced) "?" else "？"
+        val trimmed = trimEnd()
+        val last = trimmed.lastOrNull() ?: return trimmed
+        if (last in QUESTION_MARKS) return trimmed
+
+        val body = trimmed.trimEnd { it in profile.sentenceEnders }
+        return body.ifEmpty { trimmed } + if (profile.wordSpaced) "?" else "？"
     }
 
     private companion object {
@@ -309,7 +337,20 @@ class HeuristicCardGenerator : CardGenerator {
          * A year, or any figure with a unit or percentage attached. Digits are written the same
          * way in every script Abhyas supports, so this one pattern is genuinely universal - which
          * is exactly why it is the fallback that keeps CJK clozes working at all.
+         *
+         * The units are listed rather than described as "a short word after a number", which is what
+         * this used to do and which failed in both directions at once. `[a-zA-Z]{1,4}` cannot reach a
+         * word boundary inside a longer word, so "3 hours" - the exact case it was written for - did
+         * not match; but it happily matched a number plus any function word, so "The process takes
+         * 2 to 3 hours" was blanked as "2 to". And because this branch is tried before the salient
+         * term, that nonsense pre-empted the better candidate rather than merely joining it.
          */
-        val NUMERIC = Regex("""\b(1[0-9]{3}|20[0-9]{2})\b|\b\d+(\.\d+)?\s?%|\b\d+(\.\d+)?\s?[a-zA-Z]{1,4}\b""")
+        val NUMERIC = Regex(
+            """\b(1[0-9]{3}|20[0-9]{2})\b""" +
+                """|\b\d+(\.\d+)?\s?%""" +
+                """|\b\d+(\.\d+)?\s?(°[CF]?|km/h|kg|mg|km|cm|mm|nm|ml|ms|min|hrs?|hours?""" +
+                """|minutes?|seconds?|days?|years?|kJ|Hz|[gmlsJNWVA])\b""",
+            RegexOption.IGNORE_CASE
+        )
     }
 }

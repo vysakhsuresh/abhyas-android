@@ -27,6 +27,14 @@ sealed class ScriptProfile(val script: ScriptOption) {
     open val wordSpaced: Boolean = true
 
     /**
+     * What goes between two lines that were one line before the text wrapped.
+     *
+     * Empty for the unspaced scripts: inserting a space at every wrapped line would open a gap in
+     * the middle of a word that was never broken in the first place.
+     */
+    val joiner: String get() = if (wordSpaced) " " else ""
+
+    /**
      * Shortest run worth making a card from. CJK is far denser per character than an alphabet,
      * so the same threshold would throw away perfectly good sentences.
      */
@@ -35,11 +43,30 @@ sealed class ScriptProfile(val script: ScriptOption) {
     /** Inverting "X is Y" into "What is X?". Null where the grammar does not allow it. */
     open val copula: Regex? = null
 
-    /** How a worked exercise labels its question and its answer on the page. */
+    /**
+     * How a worked exercise labels its question and its answer on the page.
+     *
+     * The lookahead on the optional-terminator alternatives is what keeps these from matching a
+     * *prefix* of a longer word. `Ans\.?\s*[:.]?` has both terminators optional, so it matched the
+     * bare "Ans" of "Answer:" and stripped only those three letters - the card then shipped as
+     * "wer: the green pigment found in leaves", at 0.98 confidence, which is the top of the review
+     * list. Requiring the label to end at whitespace or end-of-string accepts "Answer:" and "Ans."
+     * whole while rejecting "Answered" and "Ansel".
+     *
+     * The spelled-out forms are matched too. "Question 1." and "Answer:" are at least as common in
+     * a textbook as the abbreviations, and the old patterns required a terminator straight after the
+     * Q or A, so every exercise written out in full was skipped by the Q&A pass entirely.
+     */
     open val questionPrefix: Regex =
-        Regex("""^\s*(Q\s*\d*\s*[.):]|\d{1,2}\s*[.)])\s*""", RegexOption.IGNORE_CASE)
+        Regex(
+            """^\s*(Q(?:uestion)?s?\s*\d*\s*[.):]|\d{1,2}\s*[.)])\s*""",
+            RegexOption.IGNORE_CASE
+        )
     open val answerPrefix: Regex =
-        Regex("""^\s*(A\s*\d*\s*[.):]|Ans\.?\s*[:.]?)\s*""", RegexOption.IGNORE_CASE)
+        Regex(
+            """^\s*(A\s*\d*\s*[.):]|Ans(?:wer)?s?\s*\d*\s*[.):]?(?=\s|$))\s*""",
+            RegexOption.IGNORE_CASE
+        )
 
     /** Sentence openers that mean "a list follows", not "here is a definition". */
     open val leadInStarts: List<String> = emptyList()
@@ -238,12 +265,17 @@ sealed class ScriptProfile(val script: ScriptOption) {
          */
         val meansPattern = Regex("""\s+(का अर्थ है|का मतलब है|की परिभाषा है)\s+""")
 
+        // The lookaheads matter more here than in Latin, because Devanagari has no case to fall
+        // back on: without one, "उत्तरी भारत" ("northern India") had its उत्तर stripped and shipped
+        // as an answer beginning "ी भारत".
         override val questionPrefix = Regex(
-            """^\s*(प्रश्न\s*\d*\s*[.):]?|प्र\s*\d*\s*[.):]|Q\s*\d*\s*[.):]|\d{1,2}\s*[.)])\s*""",
+            """^\s*(प्रश्न\s*\d*\s*[.):]?(?=\s|$)|प्र\s*\d*\s*[.):]|""" +
+                """Q(?:uestion)?s?\s*\d*\s*[.):]|\d{1,2}\s*[.)])\s*""",
             RegexOption.IGNORE_CASE
         )
         override val answerPrefix = Regex(
-            """^\s*(उत्तर\s*\d*\s*[.):]?|उ\s*\d*\s*[.):]|A\s*\d*\s*[.):]|Ans\.?\s*[:.]?)\s*""",
+            """^\s*(उत्तर\s*\d*\s*[.):]?(?=\s|$)|उ\s*\d*\s*[.):]|""" +
+                """A\s*\d*\s*[.):]|Ans(?:wer)?s?\s*\d*\s*[.):]?(?=\s|$))\s*""",
             RegexOption.IGNORE_CASE
         )
 
@@ -294,7 +326,14 @@ sealed class ScriptProfile(val script: ScriptOption) {
      */
     sealed class Cjk(script: ScriptOption) : ScriptProfile(script) {
         override val sentenceEnders = "。？！；：.?!:;"
-        override val sentenceBoundary = Regex("""(?<=[。？！.?!])\s*""")
+        /**
+         * Two alternatives, because the full-width and borrowed-Latin terminators need different
+         * rules. CJK does not space its sentences, so 。？！ must split on a zero-width match; the
+         * ASCII '.' must not, or it splits inside a decimal. With both in one zero-width lookbehind,
+         * "密度约为1.0克每立方厘米。" came back as "密度约为1." and "0克每立方厘米。" - two fragments
+         * long enough to clear the six-character minimum and go on to become cards.
+         */
+        override val sentenceBoundary = Regex("""(?<=[。？！])\s*|(?<=[.?!])\s+""")
         override val wordSpaced = false
 
         /** A CJK character carries far more meaning than a letter, so the floor is much lower. */
@@ -313,8 +352,11 @@ sealed class ScriptProfile(val script: ScriptOption) {
             """^\s*(問\s*\d*\s*[.):：、]?|问\s*\d*\s*[.):：、]?|문제\s*\d*\s*[.):]?|Q\s*\d*\s*[.):]|\d{1,2}\s*[.)])\s*""",
             RegexOption.IGNORE_CASE
         )
+        // 答案 before 答, so the two-character form is consumed whole. Matching 答 first left the
+        // answer beginning "案：".
         override val answerPrefix = Regex(
-            """^\s*(答\s*\d*\s*[.):：、]?|정답\s*[.):]?|답\s*[.):]?|A\s*\d*\s*[.):]|Ans\.?\s*[:.]?)\s*""",
+            """^\s*((?:答案|答)\s*\d*\s*[.):：、]?|정답\s*[.):]?|답\s*[.):]?|""" +
+                """A\s*\d*\s*[.):]|Ans(?:wer)?s?\s*\d*\s*[.):]?(?=\s|$))\s*""",
             RegexOption.IGNORE_CASE
         )
 

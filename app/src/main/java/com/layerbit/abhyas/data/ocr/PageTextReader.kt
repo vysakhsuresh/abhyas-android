@@ -222,8 +222,19 @@ data class PageText(
 
     // --------------------------------------------------------------------------------- stitching
 
-    /** A block's runs, kept with its box so the next block can be judged against it. */
-    private class Stitched(val runs: MutableList<String>, val box: TextBox?, val lineCount: Int)
+    /**
+     * A block's runs, kept with its box so the next block can be judged against it.
+     *
+     * [box] and [lineCount] are mutable because they must describe the *last* block absorbed, not
+     * the first. Held at the first, the gap to each new candidate was measured from the top of the
+     * chain and so grew by the full height of every block already joined, while the budget stayed
+     * one line - so a paragraph broken into three or four blocks reliably truncated at the third.
+     */
+    private class Stitched(
+        val runs: MutableList<String>,
+        var box: TextBox?,
+        var lineCount: Int
+    )
 
     /**
      * Rejoin paragraphs that a block boundary split mid-sentence.
@@ -254,15 +265,22 @@ data class PageText(
             val previous = out.lastOrNull()
             val previousRun = previous?.runs?.lastOrNull()
 
-            val continues = previousRun != null &&
-                profile.wordSpaced &&
-                !endsSentence(previousRun) &&
-                startsLowerCase(runs.first()) &&
+            // The text test is the same `continues` the within-block joiner uses, rather than a
+            // second, stricter one. The old test required `profile.wordSpaced`, which is false for
+            // all three CJK profiles, and `startsLowerCase`, which is false for every Devanagari
+            // consonant because they are OTHER_LETTER rather than lowercase - so cross-block
+            // stitching could only ever fire for Latin, and a Hindi or Chinese paragraph split by a
+            // block boundary stayed truncated. The geometry below remains the load-bearing guard.
+            val joins = previousRun != null &&
+                continues(previousRun, runs.first()) &&
                 sitsDirectlyBelow(previous, block.box)
 
-            if (continues) {
-                previous.runs[previous.runs.lastIndex] = "$previousRun ${runs.first()}"
+            if (joins) {
+                previous.runs[previous.runs.lastIndex] = previousRun + profile.joiner + runs.first()
                 previous.runs += runs.drop(1)
+                // Advance to the block just absorbed, so the next candidate is measured from here.
+                previous.box = block.box
+                previous.lineCount = block.lines.size
             } else {
                 out += Stitched(runs.toMutableList(), block.box, block.lines.size)
             }
@@ -291,9 +309,6 @@ data class PageText(
         return above.horizontalOverlapWith(below) >= MIN_HORIZONTAL_OVERLAP
     }
 
-    private fun startsLowerCase(text: String): Boolean =
-        text.firstOrNull()?.isLowerCase() == true
-
     // ------------------------------------------------------------------------ within one block
 
     /** Split one run into sentences, dropping fragments too short to make a card out of. */
@@ -314,9 +329,7 @@ data class PageText(
     private fun runsIn(blockLines: List<String>): List<String> {
         val runs = mutableListOf<String>()
         val current = StringBuilder()
-        // CJK does not put spaces between words, so inserting one at every wrapped line would
-        // leave a gap in the middle of a word that was never broken in the first place.
-        val joiner = if (profile.wordSpaced) " " else ""
+        val joiner = profile.joiner
 
         for (line in blockLines) {
             if (current.isEmpty()) {
@@ -341,8 +354,38 @@ data class PageText(
         return runs
     }
 
-    private fun continues(previous: String, next: String): Boolean =
-        !endsSentence(previous) && !startsNewThought(next)
+    /**
+     * Whether [next] carries on from [previous] rather than starting something of its own.
+     *
+     * The colon case is the subtle one. A colon is in every profile's `sentenceEnders`, which is
+     * right for splitting sentences and wrong here: a textbook writes a term on one line and its
+     * definition on the next, and treating the colon as a full stop left "Chlorophyll:" as a run on
+     * its own. `colonDefinition` then saw an empty definition and no card came out at all - the
+     * commonest layout in a glossary produced nothing.
+     *
+     * It is not enough to stop treating colons as terminators, though, because "Exercise 1:" and
+     * "There are three reasons:" are also colon-terminated and must stay separate - and joining
+     * them would swallow a following "Q1." label that the Q&A pass needs at the start of a run. So
+     * the join is conditional on the left side actually looking like a *term*: short, not a heading,
+     * and not one of the script's lead-in phrases.
+     */
+    private fun continues(previous: String, next: String): Boolean {
+        if (startsNewThought(next)) return false
+
+        val trimmed = previous.trimEnd()
+        val last = trimmed.lastOrNull() ?: return false
+
+        if (last in MID_SENTENCE_PUNCTUATION) {
+            val term = trimmed.dropLast(1).trim()
+            if (term.isEmpty()) return false
+            val lowered = term.lowercase()
+            return profile.units(term) in 1..profile.maxTermUnits &&
+                profile.headingPrefix?.containsMatchIn(term) != true &&
+                profile.leadInStarts.none { lowered.startsWith(it) }
+        }
+
+        return !endsSentence(previous)
+    }
 
     private fun endsSentence(text: String): Boolean =
         text.trimEnd().lastOrNull()?.let { it in profile.sentenceEnders } == true
@@ -371,6 +414,14 @@ data class PageText(
 
         /** Bullet and list markers, which look the same in every script this app supports. */
         val BULLET = Regex("""^\s*([-*•●■]|\(?\d{1,2}[.)]|[a-z][.)])\s+""")
+
+        /**
+         * Punctuation that ends a clause but not a thought, in both widths.
+         *
+         * Every profile lists these among its sentence enders, which is correct for splitting
+         * sentences and wrong for deciding whether the next line continues this one. See [continues].
+         */
+        const val MID_SENTENCE_PUNCTUATION = ":;：；"
 
         /**
          * How far below a block the next one may start and still be the same paragraph, measured

@@ -481,6 +481,254 @@ class HeuristicCardGeneratorTest {
         assertEquals(CardKind.DEFINITION, result.first().kind)
     }
 
+    // ------------------------------------------------------------- the second audit's findings
+
+    @Test
+    fun `an imperative exercise does not keep its full stop in front of the question mark`() {
+        // Textbook exercises are overwhelmingly imperative, and the old code only looked for an
+        // existing question mark before concatenating - so the commonest shape on the page shipped
+        // as "Define osmosis.?".
+        val result = cards(
+            listOf(
+                listOf(
+                    "Q2. Define osmosis.",
+                    "Ans. The movement of water across a semi-permeable membrane."
+                )
+            ),
+            ScriptProfile.Latin
+        )
+
+        assertNotNull("the exercise should produce a card", result.withFront("Define osmosis?"))
+    }
+
+    @Test
+    fun `a spelled-out Answer label is stripped whole rather than three letters deep`() {
+        // "Ans\.?\s*[:.]?" had both terminators optional, so it matched the bare "Ans" of "Answer:"
+        // and the card shipped as "wer: the green pigment..." at the top confidence.
+        val result = cards(
+            listOf(
+                listOf(
+                    "Question 1. Which pigment absorbs sunlight?",
+                    "Answer: the green pigment found in the leaves of the plant."
+                )
+            ),
+            ScriptProfile.Latin
+        )
+
+        val card = result.withFront("Which pigment absorbs sunlight?")
+        assertNotNull("a spelled-out Question label should be recognised", card)
+        assertEquals("the green pigment found in the leaves of the plant.", card!!.back)
+    }
+
+    @Test
+    fun `a word merely beginning with the answer label is not treated as a label`() {
+        val result = cards(
+            listOf(
+                listOf(
+                    "Q1. Who first described photosynthesis?",
+                    "Answered by Jan Ingenhousz, working in Austria during 1779."
+                )
+            ),
+            ScriptProfile.Latin
+        )
+
+        // The run is taken as an unlabelled answer, which is fine - what must not happen is the
+        // label being stripped out of the middle of the word, leaving "ed by Jan Ingenhousz".
+        val card = result.withFront("Who first described photosynthesis?")
+        assertNotNull("the question should still pair with the run beneath it", card)
+        assertTrue(
+            "the answer must not be chopped mid-word: ${card!!.back}",
+            card.back.startsWith("Answered")
+        )
+    }
+
+    @Test
+    fun `a Devanagari word beginning with the answer label keeps its first letter`() {
+        // "उत्तरी" ("northern") begins with "उत्तर" ("answer"), and there is no case to fall back on.
+        val result = cards(
+            listOf(
+                listOf(
+                    "प्रश्न 1. प्रकाश संश्लेषण कहाँ होता है?",
+                    "उत्तरी भारत में यह प्रक्रिया गर्मियों में तेज़ होती है।"
+                )
+            ),
+            ScriptProfile.Devanagari
+        )
+
+        val card = result.withFront("प्रकाश संश्लेषण कहाँ होता है?")
+        assertNotNull("the Hindi exercise should still produce a card", card)
+        assertTrue(
+            "an answer must not begin mid-word: ${card!!.back}",
+            card.back.startsWith("उत्तरी")
+        )
+    }
+
+    @Test
+    fun `two questions never share one answer`() {
+        // The lookahead skipped runs already claimed; the fallback did not, so it landed back on the
+        // answer the first question had taken - and because that run is still labelled, both guards
+        // protecting the fallback were bypassed and the duplicate shipped at 0.98.
+        val result = cards(
+            listOf(
+                listOf(
+                    "Q1. Where does photosynthesis take place?",
+                    "Q2. Which pigment absorbs sunlight?",
+                    "Ans. In the chloroplasts of the leaf cells."
+                )
+            ),
+            ScriptProfile.Latin
+        )
+
+        val qa = result.filter { it.kind == CardKind.QA }
+        assertEquals("one labelled answer can only answer one question", 1, qa.size)
+    }
+
+    @Test
+    fun `a bulleted definition does not carry its bullet into the question`() {
+        val result = cards(
+            listOf(listOf("• Chlorophyll: the green pigment found in the leaves of plants.")),
+            ScriptProfile.Latin
+        )
+
+        assertNotNull("the bullet belongs to the layout, not the term", result.withFront("What is Chlorophyll?"))
+    }
+
+    @Test
+    fun `a bullet does not blind the generic-noun guard`() {
+        // Every guard in these passes is anchored at the start of the string, so a leading bullet
+        // walked straight past isDefiniteGeneric's startsWith("the ") test.
+        val result = cards(
+            listOf(listOf("• The generator is heuristic and runs entirely on the device.")),
+            ScriptProfile.Latin
+        )
+
+        assertNull(
+            "\"The generator\" is a generic noun phrase, bulleted or not",
+            result.withFront("What is The generator?")
+        )
+    }
+
+    @Test
+    fun `a number joined to a function word is not blanked as a cloze`() {
+        // "\d+\s?[a-zA-Z]{1,4}" matched a number plus any short word, and this branch is tried
+        // before the salient term - so "2 to" pre-empted the better candidate as well as being wrong.
+        val result = cards(
+            listOf(listOf("The process of germination usually takes 2 to 3 hours to complete.")),
+            ScriptProfile.Latin
+        )
+
+        result.filter { it.kind == CardKind.CLOZE }.forEach {
+            assertTrue("\"${it.back}\" is not a fact worth blanking", it.back.trim() != "2 to")
+        }
+    }
+
+    @Test
+    fun `a real unit is blanked, which the old pattern could not match at all`() {
+        // [a-zA-Z]{1,4} cannot reach a word boundary inside "hours", so the exact case the numeric
+        // branch was written for never matched.
+        val result = cards(
+            listOf(listOf("Water held at this temperature will pasteurise fully within 3 hours.")),
+            ScriptProfile.Latin
+        )
+
+        assertTrue(
+            "a measured quantity is the one thing worth blanking in that sentence",
+            result.any { it.kind == CardKind.CLOZE && it.back.contains("3 hours") }
+        )
+    }
+
+    @Test
+    fun `a term on its own line is joined to the definition beneath it`() {
+        // A colon is in every profile's sentenceEnders, so "Chlorophyll:" was left as a run of its
+        // own, colonDefinition saw an empty definition, and the commonest glossary layout on a page
+        // produced no card whatsoever.
+        val page = PageText(
+            blocks = listOf(
+                block(100, "Chlorophyll:"),
+                block(140, "the green pigment found in the chloroplasts of plant cells.")
+            ),
+            profile = ScriptProfile.Latin
+        )
+
+        val card = cardsFrom(page).withFront("What is Chlorophyll?")
+        assertNotNull("a term and the line below it are one definition", card)
+        assertTrue("the whole definition should survive: ${card!!.back}", card.back.contains("chloroplasts"))
+    }
+
+    @Test
+    fun `an exercise heading is not joined to the question beneath it`() {
+        // The other side of the same fix: "Exercise 1:" must stay separate, or the "Q1." label is
+        // swallowed into the middle of a run and the Q&A pass stops seeing it.
+        val page = PageText(
+            blocks = listOf(
+                block(100, "Exercise 1:"),
+                block(140, "Q1. Where does photosynthesis take place?"),
+                block(180, "Ans. In the chloroplasts of the leaf cells.")
+            ),
+            profile = ScriptProfile.Latin
+        )
+
+        assertNotNull(
+            "the exercise label must not swallow the question label",
+            cardsFrom(page).withFront("Where does photosynthesis take place?")
+        )
+    }
+
+    @Test
+    fun `a paragraph broken into four blocks is stitched whole`() {
+        // The stitched box was never advanced, so each gap was measured from the top of the chain and
+        // grew by the height of every block already joined, while the budget stayed one line. Three
+        // blocks survived; the fourth was always rejected.
+        val page = PageText(
+            blocks = listOf(
+                block(100, "Photosynthesis is the process by which green plants and"),
+                block(140, "some other organisms convert light energy into the"),
+                block(180, "chemical energy that is later released to fuel the"),
+                block(220, "activities of the organism itself.")
+            ),
+            profile = ScriptProfile.Latin
+        )
+
+        val runs = page.runs()
+        assertEquals("all four blocks are one paragraph", 1, runs.size)
+        assertTrue("the last block must not be dropped: ${runs.first()}", runs.first().endsWith("itself."))
+    }
+
+    @Test
+    fun `a Hindi paragraph split across blocks is stitched whole`() {
+        // Cross-block stitching required wordSpaced and a lowercase first letter. Devanagari
+        // consonants are OTHER_LETTER, for which isLowerCase() is false, so no Hindi continuation
+        // ever passed - and for CJK the wordSpaced gate rejected every one outright.
+        val page = PageText(
+            blocks = listOf(
+                block(100, "प्रकाश संश्लेषण वह प्रक्रिया है जिसके द्वारा हरे पौधे"),
+                block(140, "सूर्य के प्रकाश से अपना भोजन स्वयं बनाते हैं।")
+            ),
+            profile = ScriptProfile.Devanagari
+        )
+
+        val runs = page.runs()
+        assertEquals("both blocks are one sentence", 1, runs.size)
+        assertTrue("the continuation must survive: ${runs.first()}", runs.first().contains("भोजन"))
+    }
+
+    @Test
+    fun `a Chinese decimal is not split into two sentences`() {
+        // The ASCII full stop sat in a zero-width lookbehind, and Pattern.split only skips a
+        // zero-width match at offset zero - so every decimal point split the sentence, and both
+        // halves were long enough to go on and become cards.
+        val page = PageText.ofLines(
+            listOf(listOf("水的密度约为1.0克每立方厘米，这是一个重要的物理常数。")),
+            ScriptProfile.Cjk.Chinese
+        )
+
+        page.runs().forEach { run ->
+            page.sentencesOf(run).forEach { sentence ->
+                assertTrue("a sentence must not begin mid-number: $sentence", !sentence.startsWith("0克"))
+            }
+        }
+    }
+
     private companion object {
         /** Nominal height of one line of text in the synthetic page layouts above. */
         const val LINE_HEIGHT = 40
