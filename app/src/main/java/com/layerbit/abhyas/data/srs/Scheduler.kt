@@ -253,21 +253,37 @@ object Scheduler {
         return current.inDays(memory, now, retention)
     }
 
-    /** Schedule on the minute scale, during learning or relearning. */
+    /**
+     * Schedule on the minute scale, during learning or relearning.
+     *
+     * [step] is clamped rather than trusted, and this is the one place that can do it for every
+     * caller. A stored `learningStep` is an index into a step table that this app defines, so
+     * nothing it writes itself can be out of range - but the value also arrives from a backup file,
+     * which may have been written by a later version with more steps, hand-edited, or produced by
+     * the SM-2 migration. Out of range it threw ArrayIndexOutOfBoundsException from inside the
+     * grade handler, which is the worst possible place for it: the crash is *on* the offending card,
+     * so reopening the deck serves the same card and crashes again. One bad row ended studying for
+     * that deck permanently, and no amount of retrying could clear it.
+     */
     private fun Scheduling.inMinutes(
         memory: Memory,
         state: CardState,
         step: Int,
         steps: IntArray,
         now: Long
-    ): Scheduling = copy(
-        state = state,
-        stability = memory.stability,
-        difficulty = memory.difficulty,
-        lastReviewedAt = now,
-        learningStep = step,
-        dueAt = now + steps[step] * MINUTE_MILLIS
-    )
+    ): Scheduling {
+        val safeStep = step.coerceIn(0, steps.lastIndex)
+        return copy(
+            state = state,
+            stability = memory.stability,
+            difficulty = memory.difficulty,
+            lastReviewedAt = now,
+            // Written back clamped, so a row that arrived out of range is repaired by being
+            // studied rather than staying a trap for the next version with different steps.
+            learningStep = safeStep,
+            dueAt = now + steps[safeStep] * MINUTE_MILLIS
+        )
+    }
 
     /** Schedule on the day scale, as a reviewing card. */
     private fun Scheduling.inDays(

@@ -8,6 +8,7 @@ import com.layerbit.abhyas.data.model.Grade
 import com.layerbit.abhyas.data.repo.AbhyasRepository
 import com.layerbit.abhyas.data.repo.AnsweredReview
 import com.layerbit.abhyas.data.srs.Scheduler
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -63,6 +64,18 @@ class StudyViewModel(
     /** The last answer given, held so it can be taken back. One step only - see [undo]. */
     private var lastReview: AnsweredReview? = null
 
+    /**
+     * The in-flight answer or undo.
+     *
+     * Both write to the database, the queue and [lastReview], and neither may overlap the other.
+     * `answerShown` cannot do this job: it is only cleared inside [advance], which runs *after* the
+     * database write has suspended, so for the whole duration of that write the flag still reads
+     * true and a second tap passes exactly the same guard the first one did. The card would be
+     * graded twice - two rows in the review log, the interval pushed out on a review the user never
+     * did, and `lastReview` overwritten so undo could only take back one of the two.
+     */
+    private var mutating: Job? = null
+
     init {
         viewModelScope.launch {
             queue += repository.buildQueue(deckId)
@@ -75,12 +88,14 @@ class StudyViewModel(
     }
 
     fun answer(grade: Grade) {
+        // Guard the double tap. See [mutating] for why the answerShown check below cannot.
+        if (mutating?.isActive == true) return
         val current = _state.value.card ?: return
-        // Guard the double tap: without this, a fast second press grades the same card twice and
-        // pushes its interval out on a review the user never actually did.
+        // Grading a card whose answer has not been revealed is not a review, it is a guess about a
+        // guess, so the buttons are not live until the user has looked.
         if (!_state.value.answerShown) return
 
-        viewModelScope.launch {
+        mutating = viewModelScope.launch {
             val review = repository.answer(current, grade)
             lastReview = review
             queue.remove(current)
@@ -117,10 +132,11 @@ class StudyViewModel(
      * meant Again - is always the answer you just gave.
      */
     fun undo() {
+        if (mutating?.isActive == true) return
         val review = lastReview ?: return
         lastReview = null
 
-        viewModelScope.launch {
+        mutating = viewModelScope.launch {
             repository.undo(review)
 
             queue.removeAll { it.id == review.before.id }

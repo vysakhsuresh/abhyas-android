@@ -1,6 +1,7 @@
 package com.layerbit.abhyas.data.repo
 
 import android.content.Context
+import androidx.room.withTransaction
 import com.layerbit.abhyas.data.backup.Backup
 import com.layerbit.abhyas.data.db.AbhyasDatabase
 import com.layerbit.abhyas.data.db.CardEntity
@@ -17,8 +18,10 @@ import com.layerbit.abhyas.data.model.Grade
 import com.layerbit.abhyas.data.ocr.ScriptOption
 import com.layerbit.abhyas.data.srs.Scheduler
 import java.util.Calendar
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.withContext
 
 /** Everything the UI is allowed to do to the collection. */
 class AbhyasRepository(context: Context) {
@@ -136,19 +139,26 @@ class AbhyasRepository(context: Context) {
         val becameLeech = updated.isLeech && !card.isLeech
         if (becameLeech) updated = updated.copy(suspended = true)
 
-        cards.update(updated)
-        val logId = log.insert(
-            ReviewLogEntity(
-                cardId = card.id,
-                deckId = card.deckId,
-                reviewedAt = now,
-                grade = grade,
-                intervalBefore = before.intervalDays,
-                intervalAfter = after.intervalDays
+        // One transaction, and uncancellable. Three separate writes meant a process killed between
+        // them - or a user leaving the screen, which cancels the scope mid-answer - could advance
+        // the card without logging the review. The card would then be scheduled months out while
+        // the streak, the retention figure and undo all behaved as though the review never
+        // happened, and nothing in the app would ever notice the discrepancy.
+        return atomically {
+            cards.update(updated)
+            val logId = log.insert(
+                ReviewLogEntity(
+                    cardId = card.id,
+                    deckId = card.deckId,
+                    reviewedAt = now,
+                    grade = grade,
+                    intervalBefore = before.intervalDays,
+                    intervalAfter = after.intervalDays
+                )
             )
-        )
-        decks.touch(card.deckId, now)
-        return AnsweredReview(before = card, after = updated, logId = logId, becameLeech = becameLeech)
+            decks.touch(card.deckId, now)
+            AnsweredReview(before = card, after = updated, logId = logId, becameLeech = becameLeech)
+        }
     }
 
     /**
@@ -158,7 +168,7 @@ class AbhyasRepository(context: Context) {
      * undoes the rest, because a review the user explicitly took back must not keep counting
      * towards their streak or their retention figure.
      */
-    suspend fun undo(review: AnsweredReview) {
+    suspend fun undo(review: AnsweredReview) = atomically {
         cards.update(review.before)
         log.deleteById(review.logId)
     }
@@ -221,10 +231,15 @@ class AbhyasRepository(context: Context) {
      */
     suspend fun mergeDecks(source: Long, destination: Long) {
         if (source == destination) return
-        cards.moveAll(source, destination)
-        log.moveAll(source, destination)
-        decks.byId(source)?.let { decks.delete(it) }
-        decks.touch(destination, System.currentTimeMillis())
+        // Four writes that are only correct together. Interrupted after the cards moved but before
+        // the source was deleted, the user is left with an empty ghost deck they did not ask for;
+        // interrupted the other way round, the cards go with it.
+        atomically {
+            cards.moveAll(source, destination)
+            log.moveAll(source, destination)
+            decks.byId(source)?.let { decks.delete(it) }
+            decks.touch(destination, System.currentTimeMillis())
+        }
     }
 
     // -------------------------------------------------------------------------------- backup
@@ -241,22 +256,49 @@ class AbhyasRepository(context: Context) {
      *
      * Returns how many decks and cards actually landed.
      */
-    suspend fun restoreBackup(backup: Backup): Pair<Int, Int> {
-        var restoredCards = 0
+    suspend fun restoreBackup(backup: Backup): Pair<Int, Int> = atomically {
         val now = System.currentTimeMillis()
 
+        // Insert every deck first, remembering which new id each *file* id became. putIfAbsent, so
+        // a hand-edited file where two decks share an id sends that id's cards to one of them
+        // rather than duplicating every card into both.
+        val newIdFor = mutableMapOf<Long, Long>()
         backup.decks.forEach { deck ->
             val newId = decks.insert(deck.copy(id = 0, lastUsedAt = now))
-            val forDeck = backup.cards
-                .filter { it.deckId == deck.id }
-                .map { it.copy(id = 0, deckId = newId) }
-            if (forDeck.isNotEmpty()) {
-                cards.insertAll(forDeck)
-                restoredCards += forDeck.size
-            }
+            newIdFor.putIfAbsent(deck.id, newId)
         }
-        return backup.decks.size to restoredCards
+
+        // Cards whose deckId matches no deck in the file go to the first deck restored rather than
+        // being dropped. A file written by this app always matches, but one that was hand-edited,
+        // merged by someone, or written by a version that omitted deck ids would otherwise lose
+        // every card in silence - and this file is the only thing standing between the user and a
+        // lost phone, so quietly restoring nothing is the one outcome it must not have.
+        val fallback = newIdFor.values.firstOrNull() ?: return@atomically 0 to 0
+
+        var restoredCards = 0
+        backup.cards.groupBy { it.deckId }.forEach { (fileDeckId, group) ->
+            val target = newIdFor[fileDeckId] ?: fallback
+            cards.insertAll(group.map { it.copy(id = 0, deckId = target) })
+            restoredCards += group.size
+        }
+
+        backup.decks.size to restoredCards
     }
+
+    /**
+     * Run [block] as one all-or-nothing database transaction that a cancelled caller cannot cut in
+     * half.
+     *
+     * Both halves earn their place. The transaction is what makes a multi-row write atomic, so a
+     * process death part-way through rolls back rather than leaving a state no code expects.
+     * [NonCancellable] is for the much more ordinary case: every caller here runs in a
+     * `viewModelScope`, and that scope is cancelled the instant the user navigates away - so
+     * tapping Restore and immediately pressing Back would otherwise abandon the write. Without the
+     * transaction that left half a collection; with the transaction alone it would roll the whole
+     * restore back and report success. Shielding it means the work the user asked for finishes.
+     */
+    private suspend fun <T> atomically(block: suspend () -> T): T =
+        withContext(NonCancellable) { db.withTransaction { block() } }
 
     companion object {
         /**

@@ -9,6 +9,9 @@ import com.layerbit.abhyas.data.generate.CardKind
 import com.layerbit.abhyas.data.generate.HeuristicCardGenerator
 import com.layerbit.abhyas.data.ocr.PageTextReader
 import com.layerbit.abhyas.data.repo.AbhyasRepository
+import java.io.File
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,6 +48,18 @@ class CaptureViewModel(
     val step: StateFlow<CaptureStep> = _step.asStateFlow()
 
     /**
+     * The in-flight read and the in-flight save.
+     *
+     * Both exist because [CaptureStep] alone cannot gate them. A step is only reassigned *after*
+     * the suspending work finishes, so for the whole duration of that work the state still says
+     * "Review" - and a second tap passes exactly the same guard the first one did. Two reads race
+     * to overwrite the review list; two saves insert every kept card twice, which the user then has
+     * to delete one at a time.
+     */
+    private var reading: Job? = null
+    private var saving: Job? = null
+
+    /**
      * Read a photographed page and propose cards from it.
      *
      * The two failure modes are told apart deliberately. "Nothing readable" means the photo was
@@ -54,16 +69,33 @@ class CaptureViewModel(
      * would send half the users into a loop of identical retakes.
      */
     fun process(uri: Uri) {
+        // A second shutter tap while the first page is still being read would start a second
+        // recognition, and whichever finished last would win - so the user could be shown
+        // suggestions from the photo they did not keep.
+        if (reading?.isActive == true) return
+
         _step.value = CaptureStep.Reading
-        viewModelScope.launch {
+        reading = viewModelScope.launch {
             // Read the deck's script at capture time rather than caching it, so changing the
             // script on the deck screen takes effect on the very next photo.
             val script = repository.deckScript(deckId)
             val page = try {
                 reader.read(appContext, uri, script)
-            } catch (e: Exception) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Throwable) {
+                // Throwable, not Exception. Decoding a photograph is the one place in this app that
+                // can plausibly exhaust the heap, and OutOfMemoryError is an Error - it would pass
+                // straight through `catch (e: Exception)` and kill the process. PageTextReader now
+                // caps the decode so this should not be reachable, but "should not" is not a reason
+                // to let the failure be a crash instead of a message.
                 _step.value = CaptureStep.Empty("That photo could not be read. Try again.")
                 return@launch
+            } finally {
+                // The photo has been read, or has failed to be; either way the text is what gets
+                // kept and a full-resolution JPEG of someone's notes should not outlive it in the
+                // cache. Only ever deletes a file this app wrote - a gallery pick is left alone.
+                discardIfCaptured(uri)
             }
 
             if (page.isEmpty || page.characterCount < MIN_USEFUL_CHARACTERS) {
@@ -115,6 +147,7 @@ class CaptureViewModel(
 
     /** Commit the kept cards. Anything with an emptied side is dropped rather than saved blank. */
     fun save() {
+        if (saving?.isActive == true) return
         val review = _step.value as? CaptureStep.Review ?: return
         val kept = review.items
             .filter { it.keep && it.front.isNotBlank() && it.back.isNotBlank() }
@@ -128,9 +161,25 @@ class CaptureViewModel(
                 )
             }
 
-        viewModelScope.launch {
+        saving = viewModelScope.launch {
             val saved = repository.addCards(deckId, kept)
             _step.value = CaptureStep.Saved(saved)
+        }
+    }
+
+    /**
+     * Delete [uri] if, and only if, it is a page this app photographed into its own cache.
+     *
+     * Gallery imports arrive as `content://` documents the user owns, and deleting one would be
+     * destroying their file. Captures arrive as `file://` paths inside `cacheDir`, which is why the
+     * check is on both the scheme and the directory rather than on the name alone.
+     */
+    private fun discardIfCaptured(uri: Uri) {
+        if (uri.scheme != "file") return
+        val path = uri.path ?: return
+        runCatching {
+            val file = File(path)
+            if (file.parentFile?.canonicalPath == appContext.cacheDir.canonicalPath) file.delete()
         }
     }
 

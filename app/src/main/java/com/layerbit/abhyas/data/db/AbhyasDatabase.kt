@@ -65,13 +65,29 @@ abstract class AbhyasDatabase : RoomDatabase() {
 
                 // Stability from the old interval; difficulty from the old ease, mapping SM-2's
                 // 2.6..1.3 range onto FSRS's 1..10 and clamped at both ends.
+                //
+                // lastReviewedAt is reconstructed rather than left at zero, and it is exactly
+                // recoverable: SM-2 set dueAt to the review time plus the interval, so subtracting
+                // the interval gives the review time back. Without it the scheduler falls back to
+                // treating the interval as the elapsed time, which silently withholds credit from
+                // every overdue card in a migrated collection - recalling something after six weeks
+                // when it was scheduled for two would be scored as though only two had passed.
+                //
+                // `intervalDays > 0` rather than `state != 'NEW'` is what keeps a card that was
+                // mid-learning out of this. Its interval is zero, so the old expression handed it a
+                // stability of 0.01 days - and because any non-zero stability reads as "tracked",
+                // the scheduler then ran the full FSRS model on that 0.01 instead of giving the
+                // card the starting values it should have had. Left untouched, such a card is
+                // untracked, and its next answer initialises it properly.
                 db.execSQL(
                     """
                     UPDATE cards
-                       SET stability = MAX(0.01, CAST(intervalDays AS REAL)),
+                       SET stability = CAST(intervalDays AS REAL),
                            difficulty = MIN(10.0, MAX(1.0,
-                               1.0 + MIN(1.0, MAX(0.0, (2.6 - easeFactor) / 1.3)) * 8.0))
-                     WHERE state != 'NEW'
+                               1.0 + MIN(1.0, MAX(0.0, (2.6 - easeFactor) / 1.3)) * 8.0)),
+                           lastReviewedAt =
+                               MAX(0, dueAt - CAST(intervalDays AS INTEGER) * 86400000)
+                     WHERE state != 'NEW' AND intervalDays > 0
                     """
                 )
             }

@@ -283,4 +283,36 @@ class SchedulerTest {
 
         assertTrue("a converted card must not explode to years", result.intervalDays in 46..250)
     }
+
+    @Test
+    fun `a learning step beyond the step table is clamped rather than thrown`() {
+        // learningStep is an index into a table this app defines, so nothing it writes itself can
+        // be out of range - but the value also arrives from a backup file, which may have been
+        // hand-edited or written by a later version with more steps. Out of range it used to throw
+        // ArrayIndexOutOfBoundsException from inside the grade handler, and the crash landed *on*
+        // the offending card: reopening the deck served the same card and crashed again, so one bad
+        // row ended studying for that deck for good.
+        val corrupt = Scheduling(state = CardState.LEARNING, learningStep = 99)
+
+        for (grade in Grade.entries) {
+            val result = Scheduler.next(corrupt, grade, now)
+            assertTrue(
+                "$grade must leave a reachable step, was ${result.learningStep}",
+                result.learningStep <= Scheduler.LEARNING_STEPS_MINUTES.lastIndex
+            )
+            assertTrue("$grade must schedule the card forwards", result.dueAt > now)
+        }
+    }
+
+    @Test
+    fun `a relearning step beyond its step table is clamped too`() {
+        // The relearning table is shorter than the learning one, so a value that is perfectly valid
+        // while learning is out of range here.
+        val corrupt = Scheduling(state = CardState.RELEARNING, learningStep = 7, intervalDays = 20)
+
+        for (grade in Grade.entries) {
+            val result = Scheduler.next(corrupt, grade, now)
+            assertTrue("$grade must schedule the card forwards", result.dueAt > now)
+        }
+    }
 }

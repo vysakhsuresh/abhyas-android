@@ -112,7 +112,17 @@ object BackupCodec {
                 deckId = obj.optLong("deckId"),
                 front = front,
                 back = back,
-                sourceText = obj.optString("sourceText").takeIf { it.isNotBlank() },
+                // isNull first, and it is not belt-and-braces. A null sourceText is written as
+                // JSONObject.NULL, and Android's optString does not return the fallback for that -
+                // it stringifies the sentinel and hands back the four characters "null". So every
+                // card without a source sentence came back from a restore claiming its source text
+                // was the word "null". Invisible in unit tests, because the org.json on the JVM
+                // test classpath returns the fallback here and Android's does not.
+                sourceText = if (obj.isNull("sourceText")) {
+                    null
+                } else {
+                    obj.optString("sourceText").takeIf { it.isNotBlank() }
+                },
                 state = runCatching { CardState.valueOf(obj.optString("state")) }
                     .getOrDefault(CardState.NEW),
                 dueAt = obj.optLong("dueAt"),

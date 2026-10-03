@@ -1,8 +1,11 @@
 package com.layerbit.abhyas.data.ocr
 
+import android.content.ContentResolver
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
+import androidx.exifinterface.media.ExifInterface
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.TextRecognizer
@@ -11,10 +14,13 @@ import com.google.mlkit.vision.text.devanagari.DevanagariTextRecognizerOptions
 import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
 import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import java.io.IOException
 import java.util.EnumMap
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 
 /**
  * Reads the text off a photographed page, in whichever script the deck is written in.
@@ -43,8 +49,83 @@ class PageTextReader {
             )
         }
 
-    suspend fun read(context: Context, uri: Uri, script: ScriptOption): PageText =
-        recognise(InputImage.fromFilePath(context, uri), script)
+    /**
+     * Read the page at [uri], decoding it on a background thread and within a pixel budget.
+     *
+     * The obvious implementation is `InputImage.fromFilePath(context, uri)`, and it is wrong twice
+     * over. It decodes the file on whichever thread calls it - which is the main thread, since the
+     * caller is a `viewModelScope.launch` - so a 12-megapixel capture freezes the UI for as long as
+     * the decode takes. And it decodes at full size: 12 MP at four bytes a pixel is 48 MB in one
+     * allocation, which on a mid-range phone with a warm heap is an [OutOfMemoryError]. That is an
+     * `Error`, not an `Exception`, so it sails straight through the caller's `catch (e: Exception)`
+     * and takes the process down - the user loses the photo and the app with it.
+     *
+     * So the decode happens here, on [Dispatchers.IO], sub-sampled to [MAX_PIXELS]. Sub-sampling
+     * costs nothing legible: a page that fills the frame still lands at roughly 250 dpi, well
+     * above what the recognisers need, and ML Kit's own guidance asks only for 1280x720.
+     */
+    suspend fun read(context: Context, uri: Uri, script: ScriptOption): PageText {
+        val (bitmap, rotation) = withContext(Dispatchers.IO) {
+            decodeBounded(context, uri)
+        }
+        return try {
+            recognise(InputImage.fromBitmap(bitmap, rotation), script)
+        } finally {
+            // ML Kit has copied what it needs by the time recognition completes, and the caller
+            // never sees this bitmap, so this is the only place that can free it.
+            bitmap.recycle()
+        }
+    }
+
+    /**
+     * Decode [uri] at no more than [MAX_PIXELS], paired with the rotation EXIF says it needs.
+     *
+     * The rotation is handed to ML Kit rather than baked in with a matrix: rotating a bitmap means
+     * allocating a second one of the same size, and the recogniser is happy to be told the angle.
+     */
+    private fun decodeBounded(context: Context, uri: Uri): Pair<Bitmap, Int> {
+        val resolver = context.contentResolver
+
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(uri).use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            throw IOException("Not a decodable image: $uri")
+        }
+
+        var sample = 1
+        while (
+            (bounds.outWidth.toLong() / sample) * (bounds.outHeight.toLong() / sample) > MAX_PIXELS
+        ) {
+            sample *= 2
+        }
+
+        val options = BitmapFactory.Options().apply { inSampleSize = sample }
+        val bitmap = resolver.openInputStream(uri).use {
+            BitmapFactory.decodeStream(it, null, options)
+        } ?: throw IOException("Could not decode image: $uri")
+
+        return bitmap to rotationOf(resolver, uri)
+    }
+
+    private fun rotationOf(resolver: ContentResolver, uri: Uri): Int {
+        // A photo whose EXIF cannot be read is far more likely to be unrotated than to be a
+        // failure worth reporting, so an unreadable tag means zero rather than an exception.
+        val orientation = runCatching {
+            resolver.openInputStream(uri).use { stream ->
+                stream?.let { ExifInterface(it).getAttributeInt(
+                    ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL
+                ) }
+            }
+        }.getOrNull() ?: ExifInterface.ORIENTATION_NORMAL
+
+        return when (orientation) {
+            ExifInterface.ORIENTATION_ROTATE_90 -> 90
+            ExifInterface.ORIENTATION_ROTATE_180 -> 180
+            ExifInterface.ORIENTATION_ROTATE_270 -> 270
+            else -> 0
+        }
+    }
 
     suspend fun read(bitmap: Bitmap, script: ScriptOption): PageText =
         recognise(InputImage.fromBitmap(bitmap, 0), script)
@@ -86,6 +167,17 @@ class PageTextReader {
     fun close() {
         recognizers.values.forEach { it.close() }
         recognizers.clear()
+    }
+
+    private companion object {
+        /**
+         * Pixel ceiling for a decoded page: four megapixels, so about 16 MB in ARGB_8888.
+         *
+         * Sized to be survivable rather than generous. Sub-sampling is in powers of two, so a
+         * 12 MP capture lands at 3 MP and a 48 MP one at 3 MP as well - comfortably inside the heap
+         * a mid-range phone will hand a foreground app, which is the whole point.
+         */
+        const val MAX_PIXELS = 4_000_000L
     }
 }
 

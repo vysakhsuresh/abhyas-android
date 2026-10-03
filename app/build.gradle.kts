@@ -134,6 +134,12 @@ dependencies {
     implementation("androidx.camera:camera-lifecycle:$cameraX")
     implementation("androidx.camera:camera-view:$cameraX")
 
+    // Read EXIF orientation off a captured page. PageTextReader decodes the photo itself, with a
+    // pixel budget, rather than handing the Uri to ML Kit - and a hand-rolled decode does not get
+    // the automatic EXIF correction that InputImage.fromFilePath performs, so a page photographed
+    // in landscape would reach the recogniser lying on its side. ~70 KB.
+    implementation("androidx.exifinterface:exifinterface:1.3.7")
+
     // Bundled (not the "-unbundled" / Play-Services-backed) builds: every recognition model
     // ships inside the APK, so OCR never needs a model download and works with no network at
     // all. That is the whole privacy position, and it is what these cost.

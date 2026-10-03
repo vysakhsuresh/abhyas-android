@@ -44,15 +44,16 @@ class ReminderWorker(
         val prefs = ReminderPreferences(applicationContext)
 
         // Consent can disappear between scheduling and firing - the user revoked the permission,
-        // or turned reminders off while a job was already queued.
-        if (!prefs.enabled || !hasNotificationPermission()) {
-            ReminderScheduler.cancel(applicationContext)
-            return Result.success()
-        }
+        // or turned reminders off while a job was already queued. Simply declining to re-arm ends
+        // the chain; cancelling here would cancel this very run, which is a confusing way to
+        // achieve nothing extra.
+        if (!prefs.enabled || !hasNotificationPermission()) return Result.success()
 
         // Chain tomorrow's run first, so an early return below cannot break the chain and
-        // silently end the reminders the user asked for.
-        ReminderScheduler.schedule(applicationContext, prefs.hour, prefs.minute)
+        // silently end the reminders the user asked for. scheduleNext rather than schedule: this
+        // worker carries the chain's tag, and replacing the chain from inside it would interrupt
+        // the coroutine before the notification below was ever posted.
+        ReminderScheduler.scheduleNext(applicationContext, prefs.hour, prefs.minute)
 
         val today = TODAY.format(Date())
         if (prefs.lastFiredOn == today) return Result.success()

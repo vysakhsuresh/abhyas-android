@@ -22,24 +22,37 @@ import java.io.File
 class CameraCapture {
 
     private var imageCapture: ImageCapture? = null
+    private var provider: ProcessCameraProvider? = null
+
+    /**
+     * Held only to read the current display rotation at shutter time. Same lifetime as this object
+     * - both are remembered by the capture composable - and cleared in [unbind].
+     */
+    private var previewView: PreviewView? = null
 
     fun bind(context: Context, lifecycleOwner: LifecycleOwner, previewView: PreviewView) {
+        this.previewView = previewView
         val providerFuture = ProcessCameraProvider.getInstance(context)
         providerFuture.addListener({
-            val provider = providerFuture.get()
-
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
-            val capture = ImageCapture.Builder()
-                // A page of notes is a detail shot, not a snapshot: legible small print matters
-                // far more here than shutter latency does.
-                .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-                .build()
-
+            // Everything is inside the try, including the `get()`. A device whose camera stack
+            // failed to initialise makes that call throw ExecutionException, and this listener runs
+            // on the main thread - so an uncaught throw here is not a camera that does not work,
+            // it is the app disappearing the moment the user taps "Add cards".
             try {
-                provider.unbindAll()
-                provider.bindToLifecycle(
+                val cameraProvider = providerFuture.get()
+                provider = cameraProvider
+
+                val preview = Preview.Builder().build().also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+                val capture = ImageCapture.Builder()
+                    // A page of notes is a detail shot, not a snapshot: legible small print matters
+                    // far more here than shutter latency does.
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+                    .build()
+
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(
                     lifecycleOwner,
                     CameraSelector.DEFAULT_BACK_CAMERA,
                     preview,
@@ -47,11 +60,28 @@ class CameraCapture {
                 )
                 imageCapture = capture
             } catch (_: Exception) {
-                // No usable back camera, or another app holds it. The screen keeps its gallery
-                // import path, which is why this is survivable rather than fatal.
+                // No usable back camera, another app holds it, or the camera service never came
+                // up. The screen keeps its gallery import path, which is why this is survivable
+                // rather than fatal.
                 imageCapture = null
             }
         }, ContextCompat.getMainExecutor(context))
+    }
+
+    /**
+     * Release the camera.
+     *
+     * Binding to the lifecycle only unbinds when the lifecycle itself stops, and the capture screen
+     * outlives its camera step by a long way - OCR, then a review list the user may sit on for
+     * minutes, editing card after card. For all of that the sensor stays powered and streaming
+     * frames into a preview nobody is looking at, which is a visible battery cost and keeps the
+     * camera unavailable to every other app on the phone.
+     */
+    fun unbind() {
+        provider?.unbindAll()
+        provider = null
+        imageCapture = null
+        previewView = null
     }
 
     val isReady: Boolean get() = imageCapture != null
@@ -68,6 +98,14 @@ class CameraCapture {
             onResult(null)
             return
         }
+
+        // Re-read the rotation on every shot. The Activity declares configChanges for orientation,
+        // so it is never recreated and the camera is never rebound - which means a targetRotation
+        // fixed at bind time describes however the phone was held when the screen opened. Turn the
+        // phone sideways to fit a wide diagram and the EXIF would claim portrait, and the page would
+        // reach the recogniser lying on its side.
+        previewView?.display?.rotation?.let { capture.targetRotation = it }
+
         val file = File.createTempFile("page-", ".jpg", context.cacheDir)
         val options = ImageCapture.OutputFileOptions.Builder(file).build()
 
