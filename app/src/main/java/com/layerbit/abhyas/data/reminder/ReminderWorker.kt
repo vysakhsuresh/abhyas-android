@@ -1,6 +1,7 @@
 package com.layerbit.abhyas.data.reminder
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
@@ -112,6 +113,11 @@ class ReminderWorker(
         // Belt and braces: the permission was checked above, but NotificationManagerCompat can
         // still throw if it was revoked in between, and a crash inside a background worker is
         // both invisible and fatal to the chain.
+        //
+        // Suppressed because lint asks for exactly the two things already here - an explicit
+        // permission check, and handling of the SecurityException - but cannot follow the check
+        // across `hasNotificationPermission` and the early return in doWork that it guards.
+        @SuppressLint("MissingPermission")
         runCatching { manager.notify(NOTIFICATION_ID, notification) }
     }
 

@@ -27,7 +27,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -137,7 +137,10 @@ dependencies {
     // CameraX drives the capture screen. Photographing a page is the entry point to the whole
     // app, so it gets a purpose-built viewfinder rather than an ACTION_IMAGE_CAPTURE hand-off to
     // whatever camera app happens to be installed.
-    val cameraX = "1.3.4"
+    // 1.4.x or newer is not optional: camera-core's libimage_processing_util_jni.so was built with
+    // 4 KB page alignment until then, and Google Play requires 16 KB alignment from every app
+    // targeting Android 15 or above. 1.3.4 would have been rejected at upload.
+    val cameraX = "1.4.2"
     implementation("androidx.camera:camera-core:$cameraX")
     implementation("androidx.camera:camera-camera2:$cameraX")
     implementation("androidx.camera:camera-lifecycle:$cameraX")
