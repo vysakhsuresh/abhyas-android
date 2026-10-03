@@ -30,6 +30,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
@@ -46,6 +47,7 @@ import com.layerbit.abhyas.ui.components.Pill
 import com.layerbit.abhyas.ui.components.PrimaryButton
 import com.layerbit.abhyas.ui.components.ScriptPicker
 import com.layerbit.abhyas.ui.components.ScreenTitle
+import com.layerbit.abhyas.ui.components.TextLink
 import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
 import java.time.LocalDate
@@ -104,24 +106,37 @@ fun DecksScreen(
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.Top
-            ) {
-                // The title yields the width, because the links cannot: left to compete for it
-                // they were the half that gave way, and "More" wrapped to "Mor / e".
-                Box(modifier = Modifier.weight(1f)) {
+            // Four destinations is the most a header can hold before it stops being scannable, so
+            // About moves inside Settings rather than taking a fifth slot.
+            val links: @Composable () -> Unit = {
+                HeaderLink("Find", onSearch)
+                Spacer(Modifier.width(4.dp))
+                HeaderLink("Insights", onInsights)
+                Spacer(Modifier.width(4.dp))
+                HeaderLink("More", onSettings)
+            }
+
+            // Side by side the links are measured at their intrinsic width first and the title gets
+            // whatever is left, because only the title is weighted - and the links cannot yield,
+            // since a one-word destination that wraps is unreadable. Past about fontScale 1.45 that
+            // left under 115dp for a 30sp title and Android broke "Abhyas" inside the word. So above
+            // the threshold the header stacks instead: full-width title, links beneath it. Nothing
+            // has to give way because they are no longer competing for the same row.
+            if (LocalConfiguration.current.fontScale > 1.3f) {
+                Column(modifier = Modifier.fillMaxWidth()) {
                     ScreenTitle("Abhyas", "Your notes ask the questions.")
+                    Row(verticalAlignment = Alignment.CenterVertically) { links() }
                 }
-                // Four destinations is the most a header can hold before it stops being
-                // scannable, so About moves inside Settings rather than taking a fifth slot.
-                Row(modifier = Modifier.padding(top = 8.dp)) {
-                    HeaderLink("Find", onSearch)
-                    Spacer(Modifier.width(14.dp))
-                    HeaderLink("Insights", onInsights)
-                    Spacer(Modifier.width(14.dp))
-                    HeaderLink("More", onSettings)
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        ScreenTitle("Abhyas", "Your notes ask the questions.")
+                    }
+                    Row(modifier = Modifier.padding(top = 2.dp)) { links() }
                 }
             }
 
@@ -253,14 +268,7 @@ private fun NewDeckDialog(onDismiss: () -> Unit, onCreate: (String, ScriptOption
 
 @Composable
 private fun HeaderLink(label: String, onClick: () -> Unit) {
-    Text(
-        text = label,
-        color = AbhyasColors.Muted,
-        fontSize = 14.sp,
-        // A one-word destination that wraps is unreadable, and at a large display font these
-        // three together are wider than the header. Staying on one line is the lesser cost.
-        maxLines = 1,
-        softWrap = false,
-        modifier = Modifier.clickable(onClick = onClick)
-    )
+    // TextLink keeps the one-line behaviour - a one-word destination that wraps is unreadable - and
+    // adds the padding inside the clickable that turns an 18dp glyph box into a real target.
+    TextLink(text = label, color = AbhyasColors.Muted, onClick = onClick)
 }

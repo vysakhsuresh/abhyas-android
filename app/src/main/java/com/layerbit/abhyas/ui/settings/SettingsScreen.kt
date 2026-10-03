@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,6 +36,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
@@ -43,6 +46,8 @@ import com.layerbit.abhyas.data.backup.BackupCodec
 import com.layerbit.abhyas.ui.components.screenPadding
 import com.layerbit.abhyas.ui.components.Card
 import com.layerbit.abhyas.ui.components.ScreenTitle
+import com.layerbit.abhyas.ui.components.SectionLabel
+import com.layerbit.abhyas.ui.components.TextLink
 import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
 import java.text.SimpleDateFormat
@@ -107,20 +112,37 @@ fun SettingsScreen(onBack: () -> Unit, onAbout: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text(
-                text = "Back",
-                color = AbhyasColors.Muted,
-                fontSize = 14.sp,
-                modifier = Modifier.clickable(onClick = onBack)
-            )
-            Spacer(Modifier.height(18.dp))
+            TextLink("Back", AbhyasColors.Muted, onBack)
+            Spacer(Modifier.height(4.dp))
             ScreenTitle("Settings")
         }
 
         item {
             Card {
+                // The whole row is the switch, not the 50x30dp box at the end of it.
+                //
+                // With the interaction on the box, Compose emitted two unrelated nodes: a labelled
+                // static text and an anonymous clickable with no role and no on/off state. A screen
+                // reader could reach the control but could not say what it was or whether it was on,
+                // and the 50x30dp box was also the entire touch target - foundation's `clickable`
+                // does not expand one. `toggleable` with Role.Switch on the row merges the label
+                // with the state, so it reads "Daily reminder, off" and is 55dp tall.
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .toggleable(
+                            value = state.remindersEnabled,
+                            role = Role.Switch,
+                            onValueChange = { wanted ->
+                                if (!wanted) {
+                                    viewModel.setRemindersEnabled(false)
+                                } else if (notificationsAllowed()) {
+                                    viewModel.setRemindersEnabled(true)
+                                } else {
+                                    requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                                }
+                            }
+                        ),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -133,15 +155,7 @@ fun SettingsScreen(onBack: () -> Unit, onAbout: () -> Unit) {
                             fontSize = 13.sp
                         )
                     }
-                    Toggle(checked = state.remindersEnabled) {
-                        if (state.remindersEnabled) {
-                            viewModel.setRemindersEnabled(false)
-                        } else if (notificationsAllowed()) {
-                            viewModel.setRemindersEnabled(true)
-                        } else {
-                            requestNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        }
-                    }
+                    Toggle(checked = state.remindersEnabled)
                 }
 
                 if (state.remindersEnabled) {
@@ -175,7 +189,7 @@ fun SettingsScreen(onBack: () -> Unit, onAbout: () -> Unit) {
 
         item {
             Card {
-                Text("Backup", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                SectionLabel("Backup", fontSize = 16.sp)
                 Spacer(Modifier.height(8.dp))
                 Text(
                     text = "Abhyas has no account and no sync, so this file is the only way your " +
@@ -213,13 +227,7 @@ fun SettingsScreen(onBack: () -> Unit, onAbout: () -> Unit) {
                 Card {
                     Text(message, color = AbhyasColors.Text, fontSize = 13.5.sp, lineHeight = 19.sp)
                     Spacer(Modifier.height(10.dp))
-                    Text(
-                        text = "Dismiss",
-                        color = AbhyasColors.Saffron,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.clickable { viewModel.clearMessage() }
-                    )
+                    TextLink("Dismiss", AbhyasColors.Saffron, { viewModel.clearMessage() }, fontSize = 13.sp)
                 }
             }
         }
@@ -240,23 +248,33 @@ fun SettingsScreen(onBack: () -> Unit, onAbout: () -> Unit) {
 
 @Composable
 private fun ActionRow(label: String, onClick: () -> Unit) {
-    Column {
-        Text(
-            text = label,
-            color = AbhyasColors.Saffron,
-            fontSize = 14.5.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.fillMaxWidth().clickable(onClick = onClick)
-        )
-        Spacer(Modifier.height(14.dp))
-    }
+    Text(
+        text = label,
+        color = AbhyasColors.Saffron,
+        fontSize = 14.5.sp,
+        fontWeight = FontWeight.Medium,
+        // The 14dp of spacing below this row used to be a Spacer *outside* the clickable, which
+        // separated the rows visually while leaving each one a ~20dp target. Folding it into the
+        // padding inside the clickable spends the same pixels on something a finger can hit.
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(vertical = 14.dp)
+    )
 }
 
-/** A plain switch - Material3's carries its own colour scheme and fights the palette. */
+/**
+ * A plain switch - Material3's carries its own colour scheme and fights the palette.
+ *
+ * Purely a drawing. The toggling lives on the enclosing row so the label and the state are announced
+ * together, and `clearAndSetSemantics` keeps this from also appearing as a second, nameless focus
+ * stop for the same control.
+ */
 @Composable
-private fun Toggle(checked: Boolean, onClick: () -> Unit) {
+private fun Toggle(checked: Boolean) {
     Box(
         modifier = Modifier
+            .clearAndSetSemantics {}
             .width(50.dp)
             .height(30.dp)
             .clip(RoundedCornerShape(999.dp))
@@ -265,8 +283,7 @@ private fun Toggle(checked: Boolean, onClick: () -> Unit) {
                 width = 1.dp,
                 color = if (checked) AbhyasColors.Saffron else AbhyasColors.BorderStrong,
                 shape = RoundedCornerShape(999.dp)
-            )
-            .clickable(onClick = onClick),
+            ),
         contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart
     ) {
         Box(

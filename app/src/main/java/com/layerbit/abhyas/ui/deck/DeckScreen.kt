@@ -31,6 +31,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
@@ -48,7 +51,9 @@ import com.layerbit.abhyas.ui.components.Pill
 import com.layerbit.abhyas.ui.components.PrimaryButton
 import com.layerbit.abhyas.ui.components.ScriptPickerDialog
 import com.layerbit.abhyas.ui.components.SecondaryButton
+import com.layerbit.abhyas.ui.components.SectionLabel
 import com.layerbit.abhyas.ui.components.StatRow
+import com.layerbit.abhyas.ui.components.TextLink
 import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
 import kotlinx.coroutines.flow.SharingStarted
@@ -132,6 +137,7 @@ fun DeckScreen(
     var renaming by remember { mutableStateOf(false) }
     var merging by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<CardEntity?>(null) }
+    var confirmingCardDelete by remember { mutableStateOf<CardEntity?>(null) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -143,28 +149,13 @@ fun DeckScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    text = "Back",
-                    color = AbhyasColors.Muted,
-                    fontSize = 14.sp,
-                    modifier = Modifier.clickable(onClick = onBack)
-                )
+                TextLink("Back", AbhyasColors.Muted, onBack)
                 Row {
                     if (otherDecks.isNotEmpty()) {
-                        Text(
-                            text = "Merge",
-                            color = AbhyasColors.Muted,
-                            fontSize = 14.sp,
-                            modifier = Modifier.clickable { merging = true }
-                        )
-                        Spacer(Modifier.width(16.dp))
+                        TextLink("Merge", AbhyasColors.Muted, { merging = true })
+                        Spacer(Modifier.width(4.dp))
                     }
-                    Text(
-                        text = "Delete",
-                        color = AbhyasColors.Again,
-                        fontSize = 14.sp,
-                        modifier = Modifier.clickable { confirmingDelete = true }
-                    )
+                    TextLink("Delete", AbhyasColors.Again, { confirmingDelete = true })
                 }
             }
             Spacer(Modifier.height(18.dp))
@@ -175,7 +166,13 @@ fun DeckScreen(
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = (-1).sp,
-                modifier = Modifier.clickable { renaming = true }
+                modifier = Modifier
+                    // "Rename deck" spelled out: tapping a title to rename it is a discoverable
+                    // gesture by sight and an invisible one by ear, since nothing about a heading
+                    // suggests it can be activated.
+                    .semantics { heading() }
+                    .clickable(role = Role.Button, onClickLabel = "Rename deck") { renaming = true }
+                    .padding(vertical = 4.dp)
             )
         }
 
@@ -198,7 +195,7 @@ fun DeckScreen(
         } else {
             item {
                 Spacer(Modifier.height(4.dp))
-                Text(
+                SectionLabel(
                     text = "ALL CARDS",
                     color = AbhyasColors.Dim,
                     fontSize = 10.5.sp,
@@ -210,7 +207,7 @@ fun DeckScreen(
                 CardRow(
                     card = card,
                     onEdit = { editing = card },
-                    onDelete = { viewModel.deleteCard(card) }
+                    onDelete = { confirmingCardDelete = card }
                 )
             }
         }
@@ -255,6 +252,47 @@ fun DeckScreen(
                 editing = null
             },
             onDismiss = { editing = null }
+        )
+    }
+
+    // Deleting a card is as irreversible as deleting a deck and had no confirmation at all, on a
+    // 17dp target next to Edit. There is no undo for it either - unlike a graded review - so the
+    // dialog is the only thing between a mistap and losing a card and its whole history.
+    confirmingCardDelete?.let { card ->
+        AlertDialog(
+            onDismissRequest = { confirmingCardDelete = null },
+            containerColor = AbhyasColors.Surface,
+            title = { Text("Delete this card?", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    text = "\"${card.front}\" and everything you have learned about it go too. " +
+                        "This cannot be undone.",
+                    color = AbhyasColors.Muted,
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Text(
+                    text = "Delete",
+                    color = AbhyasColors.Again,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .clickable(role = Role.Button) {
+                            confirmingCardDelete = null
+                            viewModel.deleteCard(card)
+                        }
+                        .padding(12.dp)
+                )
+            },
+            dismissButton = {
+                Text(
+                    text = "Cancel",
+                    color = AbhyasColors.Muted,
+                    modifier = Modifier
+                        .clickable(role = Role.Button) { confirmingCardDelete = null }
+                        .padding(12.dp)
+                )
+            }
         )
     }
 
@@ -372,18 +410,25 @@ private fun CardRow(card: CardEntity, onEdit: () -> Unit, onDelete: () -> Unit) 
                     fontSize = 12.sp,
                     modifier = Modifier.weight(1f)
                 )
-                Text(
+                // Both were 12.5sp Texts with nothing but a clickable, so each target was a single
+                // text line - about 17dp - and they sat 18dp apart inside a Card that is itself
+                // clickable. A near miss collapsed the row; a slight overshoot hit Delete. The
+                // padding goes inside the clickable, which is what actually grows the target, and
+                // the gap between them shrinks because each one is now much wider.
+                TextLink(
                     text = "Edit",
                     color = AbhyasColors.Saffron,
+                    onClick = onEdit,
                     fontSize = 12.5.sp,
-                    modifier = Modifier.clickable(onClick = onEdit)
+                    onClickLabel = "Edit this card"
                 )
-                Spacer(Modifier.width(18.dp))
-                Text(
+                Spacer(Modifier.width(8.dp))
+                TextLink(
                     text = "Delete",
                     color = AbhyasColors.Again,
+                    onClick = onDelete,
                     fontSize = 12.5.sp,
-                    modifier = Modifier.clickable(onClick = onDelete)
+                    onClickLabel = "Delete this card"
                 )
             }
         }

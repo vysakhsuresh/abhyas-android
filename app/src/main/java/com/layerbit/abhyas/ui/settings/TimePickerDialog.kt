@@ -3,6 +3,7 @@ package com.layerbit.abhyas.ui.settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,6 +29,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.layerbit.abhyas.ui.theme.AbhyasColors
@@ -70,7 +74,11 @@ fun TimePickerDialog(
                     values = (0 until 60 step MINUTE_STEP).toList(),
                     selected = selectedMinute,
                     format = { "%02d".format(it) },
-                    modifier = Modifier.weight(1f),
+                    // The hour column formats as "7 am" and so says what it is; "00" and "30" do
+                    // not, and two unlabelled columns of numbers are indistinguishable read aloud.
+                    modifier = Modifier
+                        .weight(1f)
+                        .semantics { contentDescription = "Minutes" },
                     onSelect = { selectedMinute = it }
                 )
             }
@@ -127,7 +135,11 @@ private fun NumberColumn(
                         color = if (isSelected) AbhyasColors.Saffron else AbhyasColors.Border,
                         shape = RoundedCornerShape(10.dp)
                     )
-                    .clickable { onSelect(value) },
+                    .selectable(
+                        selected = isSelected,
+                        role = Role.RadioButton,
+                        onClick = { onSelect(value) }
+                    ),
                 contentAlignment = Alignment.Center
             ) {
                 Text(

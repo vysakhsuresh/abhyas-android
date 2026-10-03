@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -18,12 +19,17 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,6 +38,7 @@ import com.layerbit.abhyas.data.model.Grade
 import com.layerbit.abhyas.ui.components.screenPadding
 import com.layerbit.abhyas.ui.components.Card
 import com.layerbit.abhyas.ui.components.PrimaryButton
+import com.layerbit.abhyas.ui.components.TextLink
 import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
 import java.util.concurrent.TimeUnit
@@ -52,22 +59,16 @@ fun StudyScreen(deckId: Long, onDone: () -> Unit) {
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = "Close",
-                color = AbhyasColors.Muted,
-                fontSize = 14.sp,
-                modifier = Modifier.clickable(onClick = onDone)
-            )
+            TextLink("Close", AbhyasColors.Muted, onDone)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (state.canUndo) {
-                    Text(
+                    TextLink(
                         text = "Undo",
                         color = AbhyasColors.Saffron,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.clickable(onClick = viewModel::undo)
+                        onClick = viewModel::undo,
+                        onClickLabel = "Take back the last answer"
                     )
-                    Spacer(Modifier.width(16.dp))
+                    Spacer(Modifier.width(8.dp))
                 }
                 if (!state.finished && !state.loading) {
                     Text(
@@ -104,8 +105,26 @@ fun StudyScreen(deckId: Long, onDone: () -> Unit) {
                     }
 
                     if (state.answerShown) {
+                        // Revealing the answer replaced the button the user had just activated, so
+                        // the node holding accessibility focus vanished and nothing announced what
+                        // had appeared in its place - leaving a TalkBack user to hunt for the answer
+                        // they had asked to see.
+                        //
+                        // announceForAccessibility is deprecated in favour of live regions, and the
+                        // deprecation is kept suppressed rather than followed. A live region is
+                        // announced when an *existing* node's content changes; this node does not
+                        // exist until the answer is revealed, so there is no prior content to
+                        // change from and nothing dependably fires. Revealing the answer is the one
+                        // moment in this app where getting the announcement wrong means the content
+                        // is simply never read out.
+                        val view = LocalView.current
+                        LaunchedEffect(card.id, state.answerShown) {
+                            @Suppress("DEPRECATION")
+                            view.announceForAccessibility(card.back)
+                        }
+
                         Spacer(Modifier.height(12.dp))
-                        Card {
+                        Card(modifier = Modifier.semantics(mergeDescendants = true) {}) {
                             Text(
                                 text = card.back,
                                 fontSize = 18.sp,
@@ -158,18 +177,37 @@ private fun GradeButtons(previews: Map<Grade, Long>, onGrade: (Grade) -> Unit) {
         Grade.EASY to AbhyasColors.Easy
     )
 
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-        grades.forEach { (grade, color) ->
-            GradeButton(
-                label = grade.label,
-                // What this button actually costs. "Good" meaning three weeks and "Easy" meaning
-                // three months is the choice the user is really making, and showing it is what
-                // turns a blind self-grade into an informed one.
-                interval = previews[grade]?.let(::shortInterval),
-                color = color,
-                modifier = Modifier.weight(1f),
-                onClick = { onGrade(grade) }
-            )
+    // What each button actually costs. "Good" meaning three weeks and "Easy" meaning three months
+    // is the choice the user is really making, and showing it is what turns a blind self-grade into
+    // an informed one.
+    val button: @Composable (Pair<Grade, Color>, Modifier) -> Unit = { (grade, color), modifier ->
+        GradeButton(
+            label = grade.label,
+            interval = previews[grade]?.let(::shortInterval),
+            color = color,
+            modifier = modifier,
+            onClick = { onGrade(grade) }
+        )
+    }
+
+    // Four across a 360dp screen leaves each button about 74dp, and "Again" at a large font scale
+    // needs more than that - so the label wrapped inside a button that also had to hold an interval
+    // underneath it. Two rows of two give each button twice the width, on exactly the screens where
+    // the text needs it. Below the threshold the familiar single row is untouched.
+    if (LocalConfiguration.current.fontScale > 1.3f) {
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            grades.chunked(2).forEach { pair ->
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    pair.forEach { button(it, Modifier.weight(1f)) }
+                }
+            }
+        }
+    } else {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            grades.forEach { button(it, Modifier.weight(1f)) }
         }
     }
 }
@@ -184,17 +222,34 @@ private fun GradeButton(
 ) {
     Column(
         modifier = modifier
-            .height(60.dp)
+            // heightIn, and the padding inside the clickable. A fixed 60dp with a clip after it
+            // hard-clipped the contents: from about fontScale 1.8 the label and the interval need
+            // some 61dp between them, so a centred Column overflowed the box and both lines lost
+            // their top and bottom. These are the four buttons the whole app exists for.
+            .heightIn(min = 60.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(color.copy(alpha = 0.16f))
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(vertical = 8.dp, horizontal = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Text(label, color = color, fontSize = 14.5.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            text = label,
+            color = color,
+            fontSize = 14.5.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            textAlign = TextAlign.Center
+        )
         if (interval != null) {
             Spacer(Modifier.height(2.dp))
-            Text(interval, color = color.copy(alpha = 0.72f), fontSize = 11.sp)
+            Text(
+                text = interval,
+                color = color.copy(alpha = 0.72f),
+                fontSize = 11.sp,
+                maxLines = 1
+            )
         }
     }
 }

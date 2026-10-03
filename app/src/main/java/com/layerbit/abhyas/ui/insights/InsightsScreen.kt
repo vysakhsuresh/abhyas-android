@@ -26,6 +26,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -36,6 +38,8 @@ import com.layerbit.abhyas.ui.components.screenPadding
 import com.layerbit.abhyas.ui.components.Card
 import com.layerbit.abhyas.ui.components.EmptyState
 import com.layerbit.abhyas.ui.components.ScreenTitle
+import com.layerbit.abhyas.ui.components.SectionLabel
+import com.layerbit.abhyas.ui.components.TextLink
 import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
 import kotlin.math.roundToInt
@@ -56,13 +60,8 @@ fun InsightsScreen(onBack: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text(
-                text = "Back",
-                color = AbhyasColors.Muted,
-                fontSize = 14.sp,
-                modifier = Modifier.clickable(onClick = onBack)
-            )
-            Spacer(Modifier.height(18.dp))
+            TextLink("Back", AbhyasColors.Muted, onBack)
+            Spacer(Modifier.height(4.dp))
             ScreenTitle("Insights", "How the schedule is actually doing.")
         }
 
@@ -86,7 +85,7 @@ fun InsightsScreen(onBack: () -> Unit) {
 @Composable
 private fun RetentionTile(rate: Float?, streak: Int) {
     Card {
-        Text(
+        SectionLabel(
             "RECALLED, LAST 30 DAYS",
             color = AbhyasColors.Dim,
             fontSize = 10.5.sp,
@@ -155,7 +154,7 @@ private fun MaturityCard(maturity: Maturity?) {
     val total = segments.sumOf { it.second }
 
     Card {
-        Text(
+        SectionLabel(
             "WHERE YOUR CARDS ARE",
             color = AbhyasColors.Dim,
             fontSize = 10.5.sp,
@@ -231,7 +230,7 @@ private fun ForecastCard(forecast: List<ForecastDay>) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Text(
+            SectionLabel(
                 "DUE OVER THE NEXT TWO WEEKS",
                 color = AbhyasColors.Dim,
                 fontSize = 10.5.sp,
@@ -256,7 +255,24 @@ private fun ForecastCard(forecast: List<ForecastDay>) {
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth().height(96.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(96.dp)
+                // The bars are Boxes with a background and a height, so they emit no semantics at
+                // all - the chart was simply absent to a screen reader, apart from the single number
+                // over the busiest bar. Reading the fourteen days out as one node is the whole
+                // chart, in order, in the only form that survives being spoken.
+                .semantics(mergeDescendants = true) {
+                    contentDescription = days
+                        .mapIndexed { index, count ->
+                            when (index) {
+                                0 -> "today $count"
+                                1 -> "tomorrow $count"
+                                else -> "in $index days $count"
+                            }
+                        }
+                        .joinToString(", ")
+                },
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.Bottom
         ) {
@@ -275,6 +291,29 @@ private fun ForecastCard(forecast: List<ForecastDay>) {
             Text("Today", color = AbhyasColors.Dim, fontSize = 11.sp)
             Text("In 2 weeks", color = AbhyasColors.Dim, fontSize = 11.sp)
         }
+
+        // The shape of the chart in a sentence. Written for the screen reader and kept for everyone:
+        // "your heaviest day is Thursday" is the thing a student actually wants off this card, and
+        // reading it off fourteen bars is work even with good eyesight.
+        Spacer(Modifier.height(12.dp))
+        Text(
+            text = busiestDay(days),
+            color = AbhyasColors.Muted,
+            fontSize = 13.sp
+        )
+    }
+}
+
+/** The forecast's one useful sentence: when the heaviest day falls, and how heavy. */
+private fun busiestDay(days: List<Int>): String {
+    val peak = days.maxOrNull() ?: 0
+    if (peak == 0) return "Nothing scheduled yet."
+
+    val cards = if (peak == 1) "1 card" else "$peak cards"
+    return when (val index = days.indexOf(peak)) {
+        0 -> "Busiest day is today, $cards."
+        1 -> "Busiest day is tomorrow, $cards."
+        else -> "Busiest day is in $index days, $cards."
     }
 }
 
@@ -319,7 +358,7 @@ private fun ForecastBar(
 @Composable
 private fun LeechCard(leeches: List<CardEntity>, onUnsuspend: (CardEntity) -> Unit) {
     Card {
-        Text(
+        SectionLabel(
             "SET ASIDE",
             color = AbhyasColors.Dim,
             fontSize = 10.5.sp,
@@ -347,12 +386,12 @@ private fun LeechCard(leeches: List<CardEntity>, onUnsuspend: (CardEntity) -> Un
                         fontSize = 12.sp,
                         modifier = Modifier.weight(1f)
                     )
-                    Text(
+                    TextLink(
                         text = "Put back",
                         color = AbhyasColors.Saffron,
+                        onClick = { onUnsuspend(card) },
                         fontSize = 12.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.clickable { onUnsuspend(card) }
+                        onClickLabel = "Put this card back into the deck"
                     )
                 }
             }

@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -14,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
@@ -25,6 +28,8 @@ import com.layerbit.abhyas.data.repo.AbhyasRepository
 import com.layerbit.abhyas.ui.components.screenPadding
 import com.layerbit.abhyas.ui.components.Card
 import com.layerbit.abhyas.ui.components.ScreenTitle
+import com.layerbit.abhyas.ui.components.SectionLabel
+import com.layerbit.abhyas.ui.components.TextLink
 import com.layerbit.abhyas.ui.components.StatRow
 import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
@@ -61,11 +66,11 @@ fun AboutScreen(onBack: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            Text(
+            TextLink(
                 text = "Back",
                 color = AbhyasColors.Muted,
-                fontSize = 14.sp,
-                modifier = Modifier.clickable(onClick = onBack)
+                onClick = onBack,
+                fontSize = 14.sp
             )
             Spacer(Modifier.height(18.dp))
             ScreenTitle("Abhyas", "Version ${BuildConfig.VERSION_NAME}")
@@ -73,7 +78,7 @@ fun AboutScreen(onBack: () -> Unit) {
 
         item {
             Card {
-                Text("YOUR PRACTICE", color = AbhyasColors.Dim, fontSize = 10.5.sp,
+                SectionLabel("YOUR PRACTICE", color = AbhyasColors.Dim, fontSize = 10.5.sp,
                     fontWeight = FontWeight.Medium, letterSpacing = 1.2.sp)
                 Spacer(Modifier.height(14.dp))
                 StatRow(
@@ -138,7 +143,7 @@ fun AboutScreen(onBack: () -> Unit) {
 
         item {
             Card {
-                Text("Support", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                SectionLabel("Support", fontSize = 16.sp)
                 Spacer(Modifier.height(12.dp))
                 LinkRow("Send feedback") {
                     BrandLinks.sendEmail(
@@ -159,13 +164,15 @@ fun AboutScreen(onBack: () -> Unit) {
 
 @Composable
 private fun LinkRow(label: String, onClick: () -> Unit) {
-    Column {
-        Text(
-            text = label,
-            color = AbhyasColors.Saffron,
-            fontSize = 14.5.sp,
-            modifier = Modifier.clickable(onClick = onClick)
-        )
-        Spacer(Modifier.height(12.dp))
-    }
+    // The 12dp Spacer used to sit outside the clickable, separating the rows while leaving each one
+    // a single text line to hit. Spent as padding inside it, the same pixels make a real target.
+    Text(
+        text = label,
+        color = AbhyasColors.Saffron,
+        fontSize = 14.5.sp,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(vertical = 12.dp)
+    )
 }

@@ -9,6 +9,7 @@ import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -47,6 +48,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -59,6 +64,7 @@ import com.layerbit.abhyas.ui.components.EmptyState
 import com.layerbit.abhyas.ui.components.Pill
 import com.layerbit.abhyas.ui.components.PrimaryButton
 import com.layerbit.abhyas.ui.components.ScreenTitle
+import com.layerbit.abhyas.ui.components.TextLink
 import com.layerbit.abhyas.ui.components.SecondaryButton
 import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
@@ -143,11 +149,11 @@ private fun CameraStep(
             .fillMaxSize()
             .padding(screenPadding(extraBottom = 28.dp))
     ) {
-        Text(
+        TextLink(
             text = "Cancel",
             color = AbhyasColors.Muted,
-            fontSize = 14.sp,
-            modifier = Modifier.clickable(onClick = onCancel)
+            onClick = onCancel,
+            fontSize = 14.sp
         )
         Spacer(Modifier.height(18.dp))
         ScreenTitle("Photograph a page", "Fill the frame with the text. Good light helps.")
@@ -190,11 +196,11 @@ private fun CameraStep(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
+            TextLink(
                 text = "Choose photo",
                 color = AbhyasColors.Muted,
-                fontSize = 14.5.sp,
-                modifier = Modifier.clickable(onClick = onPickImage)
+                onClick = onPickImage,
+                fontSize = 14.5.sp
             )
 
             ShutterButton(enabled = hasPermission) {
@@ -214,7 +220,16 @@ private fun ShutterButton(enabled: Boolean, onClick: () -> Unit) {
             .size(72.dp)
             .clip(CircleShape)
             .background(if (enabled) AbhyasColors.Saffron else AbhyasColors.SaffronDim)
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            // The shutter has no icon and no label - it is a saffron circle, which is the right
+            // design and leaves nothing for a screen reader to read out. Naming it here is the only
+            // thing that makes the app's primary action usable with TalkBack. `disabled()` is what
+            // gets it announced as "Take photo, disabled" rather than silently dropped from the
+            // tree, since clickable(enabled = false) removes the click action and with it the node.
+            .semantics {
+                contentDescription = "Take photo"
+                if (!enabled) disabled()
+            }
     )
 }
 
@@ -318,21 +333,19 @@ private fun ReviewStep(
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(18.dp)
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    Text(
+                    TextLink(
                         text = "Keep all",
                         color = AbhyasColors.Saffron,
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.clickable { onSetAll(true) }
+                        onClick = { onSetAll(true) },
+                        fontSize = 13.5.sp
                     )
-                    Text(
+                    TextLink(
                         text = "Drop all",
                         color = AbhyasColors.Muted,
-                        fontSize = 13.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.clickable { onSetAll(false) }
+                        onClick = { onSetAll(false) },
+                        fontSize = 13.5.sp
                     )
                 }
             }
@@ -382,15 +395,20 @@ private fun ReviewCard(item: ReviewItem, onToggle: () -> Unit, onEdit: (String, 
             Spacer(Modifier.height(10.dp))
             EditableSide(label = "Answer", value = item.back) { onEdit(item.front, it) }
             Spacer(Modifier.height(10.dp))
-            Text(
+            TextLink(
                 text = "Done editing",
                 color = AbhyasColors.Saffron,
-                fontSize = 13.5.sp,
-                fontWeight = FontWeight.Medium,
-                modifier = Modifier.clickable { editing = false }
+                onClick = { editing = false },
+                fontSize = 13.5.sp
             )
         } else {
-            Column(modifier = Modifier.fillMaxWidth().clickable { editing = true }) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(role = Role.Button, onClickLabel = "Edit this card") {
+                        editing = true
+                    }
+            ) {
                 Text(
                     text = item.front,
                     fontSize = 15.5.sp,
@@ -430,9 +448,33 @@ private fun EditableSide(label: String, value: String, onChange: (String) -> Uni
     }
 }
 
-/** A plain square checkbox - Material3's has a ripple and padding that unbalance the card header. */
+/**
+ * A plain square checkbox - Material3's has a ripple and padding that unbalance the card header.
+ *
+ * Two nested boxes on purpose. The 26dp square is the design; the 48dp box around it is the hit
+ * area and the only node a screen reader sees. `toggleable` rather than `clickable` is what gives it
+ * a checked state to announce - as a bare clickable it was an anonymous, stateless focus stop, so
+ * there was no way to tell which suggestions were being kept.
+ */
 @Composable
 private fun Checkbox(checked: Boolean, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(48.dp)
+            .toggleable(
+                value = checked,
+                role = Role.Checkbox,
+                onValueChange = { onClick() }
+            )
+            .semantics { contentDescription = "Keep this card" },
+        contentAlignment = Alignment.Center
+    ) {
+        CheckboxFace(checked)
+    }
+}
+
+@Composable
+private fun CheckboxFace(checked: Boolean) {
     Box(
         modifier = Modifier
             .size(26.dp)
@@ -442,8 +484,7 @@ private fun Checkbox(checked: Boolean, onClick: () -> Unit) {
                 width = 1.dp,
                 color = if (checked) AbhyasColors.Saffron else AbhyasColors.BorderStrong,
                 shape = RoundedCornerShape(8.dp)
-            )
-            .clickable(onClick = onClick),
+            ),
         contentAlignment = Alignment.Center
     ) {
         if (checked) {

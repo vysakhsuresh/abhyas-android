@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,9 +24,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.layerbit.abhyas.ui.theme.AbhyasColors
@@ -35,6 +40,7 @@ import com.layerbit.abhyas.ui.theme.AbhyasColors
 fun Card(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    onClickLabel: String? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
     Column(
@@ -43,7 +49,20 @@ fun Card(
             .clip(RoundedCornerShape(18.dp))
             .background(AbhyasColors.Surface)
             .border(1.dp, AbhyasColors.Border, RoundedCornerShape(18.dp))
-            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .then(
+                if (onClick != null) {
+                    // role and onClickLabel both matter to a screen reader and neither is inferred:
+                    // foundation's clickable leaves the role null, so TalkBack announces a tappable
+                    // card as though it were static text and never says it can be activated.
+                    Modifier.clickable(
+                        role = Role.Button,
+                        onClickLabel = onClickLabel,
+                        onClick = onClick
+                    )
+                } else {
+                    Modifier
+                }
+            )
             .padding(18.dp),
         content = content
     )
@@ -60,17 +79,22 @@ fun PrimaryButton(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(54.dp)
+            // heightIn, not height. A fixed height with a clip after it hard-clips the label, and
+            // at large system font scales "Add cards from a page" wraps to two lines and lost its
+            // top and bottom to the 54dp box - on the one control the screen exists for.
+            .heightIn(min = 54.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(if (enabled) AbhyasColors.Saffron else AbhyasColors.SaffronDim)
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
             color = if (enabled) AbhyasColors.OnSaffron else AbhyasColors.Dim,
             fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold
+            fontWeight = FontWeight.SemiBold,
+            textAlign = TextAlign.Center
         )
     }
 }
@@ -86,18 +110,20 @@ fun SecondaryButton(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(50.dp)
+            .heightIn(min = 50.dp)
             .clip(RoundedCornerShape(14.dp))
             .background(AbhyasColors.SurfaceDim)
             .border(1.dp, AbhyasColors.BorderStrong, RoundedCornerShape(14.dp))
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
             color = if (enabled) AbhyasColors.Text else AbhyasColors.Dim,
             fontSize = 15.sp,
-            fontWeight = FontWeight.Medium
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center
         )
     }
 }
@@ -118,14 +144,78 @@ fun Pill(text: String, color: Color, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun ScreenTitle(text: String, subtitle: String? = null) {
-    Column(modifier = Modifier.padding(bottom = 18.dp)) {
-        Text(text = text, fontSize = 30.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1.1).sp)
+fun ScreenTitle(text: String, subtitle: String? = null, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.padding(bottom = 18.dp)) {
+        Text(
+            text = text,
+            fontSize = 30.sp,
+            fontWeight = FontWeight.Bold,
+            letterSpacing = (-1.1).sp,
+            // Marking headings costs nothing visually and is how TalkBack users move through a
+            // screen: without it, heading navigation finds nothing and the only way down a long
+            // settings or insights screen is one swipe per line.
+            modifier = Modifier.semantics { heading() }
+        )
         if (subtitle != null) {
             Spacer(Modifier.height(4.dp))
             Text(text = subtitle, color = AbhyasColors.Muted, fontSize = 14.sp)
         }
     }
+}
+
+/**
+ * A section heading inside a screen - "Backup", "Support", "YOUR PRACTICE".
+ *
+ * Exists so the [heading] semantics are attached once rather than remembered at seven call sites.
+ */
+@Composable
+fun SectionLabel(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = AbhyasColors.Text,
+    fontSize: TextUnit = 17.sp,
+    fontWeight: FontWeight = FontWeight.SemiBold,
+    letterSpacing: TextUnit = TextUnit.Unspecified
+) {
+    Text(
+        text = text,
+        color = color,
+        fontSize = fontSize,
+        fontWeight = fontWeight,
+        letterSpacing = letterSpacing,
+        modifier = modifier.semantics { heading() }
+    )
+}
+
+/**
+ * A text link with a real hit area.
+ *
+ * Every navigation affordance in the app was a bare `clickable` on a 14sp `Text`, which gives a
+ * target one text line tall - about 18dp against the 48dp minimum - and no button role. The padding
+ * is *inside* the clickable, which is the load-bearing detail: outside it, it moves the glyphs
+ * without growing what a finger can actually hit.
+ */
+@Composable
+fun TextLink(
+    text: String,
+    color: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    fontSize: TextUnit = 14.sp,
+    fontWeight: FontWeight = FontWeight.Medium,
+    onClickLabel: String? = null
+) {
+    Text(
+        text = text,
+        color = color,
+        fontSize = fontSize,
+        fontWeight = fontWeight,
+        maxLines = 1,
+        softWrap = false,
+        modifier = modifier
+            .clickable(role = Role.Button, onClickLabel = onClickLabel, onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 14.dp)
+    )
 }
 
 /**

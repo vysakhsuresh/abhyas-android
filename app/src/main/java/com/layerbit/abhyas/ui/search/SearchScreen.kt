@@ -20,6 +20,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
@@ -32,6 +33,7 @@ import com.layerbit.abhyas.ui.components.Card
 import com.layerbit.abhyas.ui.components.EmptyState
 import com.layerbit.abhyas.ui.components.Pill
 import com.layerbit.abhyas.ui.components.ScreenTitle
+import com.layerbit.abhyas.ui.components.TextLink
 import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -79,11 +81,11 @@ fun SearchScreen(onBack: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         item {
-            Text(
+            TextLink(
                 text = "Back",
                 color = AbhyasColors.Muted,
-                fontSize = 14.sp,
-                modifier = Modifier.clickable(onClick = onBack)
+                onClick = onBack,
+                fontSize = 14.sp
             )
             Spacer(Modifier.height(18.dp))
             ScreenTitle("Find a card")
