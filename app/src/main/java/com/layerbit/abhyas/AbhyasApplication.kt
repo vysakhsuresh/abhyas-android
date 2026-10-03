@@ -15,6 +15,25 @@ class AbhyasApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         rearmReminder()
+        sweepOrphanedPages()
+    }
+
+    /**
+     * Delete any photographed page left in the cache by a previous run.
+     *
+     * The capture flow deletes each photo as soon as OCR has read it, which covers every ordinary
+     * path including the failures. What it cannot cover is the process dying in between - a crash,
+     * or Android reclaiming memory while the user was mid-review - and what is left behind then is a
+     * full-resolution photograph of somebody's notes sitting in storage indefinitely. Abhyas keeps
+     * the text and not the page on purpose; this is what makes that true after a crash as well.
+     *
+     * Cheap enough to do on the main thread: `listFiles` on one directory, matching a prefix.
+     */
+    private fun sweepOrphanedPages() {
+        runCatching {
+            cacheDir.listFiles { file -> file.name.startsWith("page-") && file.extension == "jpg" }
+                ?.forEach { it.delete() }
+        }
     }
 
     /**

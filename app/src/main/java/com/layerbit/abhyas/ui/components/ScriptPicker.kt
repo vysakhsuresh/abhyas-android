@@ -11,11 +11,15 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -85,6 +89,20 @@ private fun ScriptRow(option: ScriptOption, selected: Boolean, onClick: () -> Un
             )
             Spacer(Modifier.height(2.dp))
             Text(option.covers, color = AbhyasColors.Dim, fontSize = 11.5.sp, lineHeight = 15.sp)
+        }
+
+        // A mark, not just a colour. `selectable` tells a screen reader which row is chosen, but
+        // for a sighted user the only signal was a saffron tint against a dark one - and this is a
+        // choice that decides whether OCR returns text or confident nonsense, so it should not rest
+        // on being able to tell two dark backgrounds apart.
+        if (selected) {
+            Spacer(Modifier.width(10.dp))
+            Icon(
+                imageVector = Icons.Filled.Check,
+                contentDescription = null,
+                tint = AbhyasColors.SaffronBright,
+                modifier = Modifier.size(20.dp)
+            )
         }
     }
 }

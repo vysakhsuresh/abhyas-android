@@ -11,6 +11,9 @@ import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import java.io.File
@@ -92,11 +95,13 @@ class CameraCapture {
                     capture
                 )
                 imageCapture = capture
+                isReady = true
             } catch (_: Exception) {
                 // No usable back camera, another app holds it, or the camera service never came
                 // up. The screen keeps its gallery import path, which is why this is survivable
                 // rather than fatal.
                 imageCapture = null
+                isReady = false
             }
         }, ContextCompat.getMainExecutor(context))
     }
@@ -116,9 +121,19 @@ class CameraCapture {
         provider = null
         imageCapture = null
         previewView = null
+        isReady = false
     }
 
-    val isReady: Boolean get() = imageCapture != null
+    /**
+     * Whether there is a bound camera to photograph with.
+     *
+     * Compose state, not a plain getter. As a getter nothing recomposed when the camera finished
+     * binding, so no caller could usefully read it - and indeed nothing did: the shutter was enabled
+     * on the camera *permission* alone, which is granted long before the provider resolves. Tapping
+     * it in that window called through to a null ImageCapture and silently did nothing at all.
+     */
+    var isReady: Boolean by mutableStateOf(false)
+        private set
 
     /**
      * Take the photo into the cache directory and hand back its Uri.

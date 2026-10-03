@@ -145,6 +145,8 @@ private fun CameraStep(
         if (!hasPermission) requestPermission.launch(Manifest.permission.CAMERA)
     }
 
+    var captureFailed by remember { mutableStateOf(false) }
+
     // Release the camera when this step leaves composition.
     //
     // bindToLifecycle ties the session to the NavBackStackEntry, which stays RESUMED for the whole
@@ -201,6 +203,19 @@ private fun CameraStep(
             }
         }
 
+        if (captureFailed) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = "That photo could not be saved. Check you have storage free, " +
+                    "or pick an existing photo instead.",
+                color = AbhyasColors.Again,
+                fontSize = 13.5.sp,
+                textAlign = TextAlign.Center,
+                lineHeight = 19.sp,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
         Spacer(Modifier.height(20.dp))
 
         Row(
@@ -215,8 +230,16 @@ private fun CameraStep(
                 fontSize = 14.5.sp
             )
 
-            ShutterButton(enabled = hasPermission) {
-                camera.takePicture(context) { uri -> uri?.let(onCaptured) }
+            // Enabled on a bound camera, not merely on the permission - which is granted well
+            // before the provider resolves, leaving a live shutter that called through to nothing.
+            ShutterButton(enabled = hasPermission && camera.isReady) {
+                captureFailed = false
+                camera.takePicture(context) { uri ->
+                    // A capture can fail for reasons the user can do something about - no storage
+                    // left, the camera grabbed by another app - and failing in silence makes the
+                    // shutter look broken. They tap it again, and again.
+                    if (uri == null) captureFailed = true else onCaptured(uri)
+                }
             }
 
             // Balances the shutter in the centre without adding a second action competing with it.

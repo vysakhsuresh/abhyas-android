@@ -111,7 +111,11 @@ class StudyViewModel(
                 if (at == -1) queue.add(updated) else queue.add(at, updated)
             }
 
-            _state.value = _state.value.copy(
+            // Handed to advance rather than published first, so one answer is one state change.
+            // Emitting the new count and then the new card recomposed the whole study screen twice,
+            // and for the frame in between it showed a progress count that had moved on with a card
+            // that had not.
+            advance(
                 answered = _state.value.answered + 1,
                 leechWarning = if (review.becameLeech) {
                     "You have forgotten this one ${updated.lapses} times. It is set aside - " +
@@ -120,7 +124,6 @@ class StudyViewModel(
                     null
                 }
             )
-            advance()
         }
     }
 
@@ -142,11 +145,11 @@ class StudyViewModel(
             queue.removeAll { it.id == review.before.id }
             queue.add(0, review.before)
 
-            _state.value = _state.value.copy(
+            advance(
+                showAnswer = true,
                 answered = (_state.value.answered - 1).coerceAtLeast(0),
                 leechWarning = null
             )
-            advance(showAnswer = true)
         }
     }
 
@@ -154,7 +157,18 @@ class StudyViewModel(
         _state.value = _state.value.copy(leechWarning = null)
     }
 
-    private suspend fun advance(showAnswer: Boolean = false) {
+    /**
+     * Publish the next card, or the end of the sitting.
+     *
+     * [answered] and [leechWarning] are passed through rather than written by the caller beforehand,
+     * so that every action produces exactly one state change and no observer ever sees a half-moved
+     * sitting.
+     */
+    private suspend fun advance(
+        showAnswer: Boolean = false,
+        answered: Int = _state.value.answered,
+        leechWarning: String? = _state.value.leechWarning
+    ) {
         val next = queue.firstOrNull()
         if (next == null) {
             _state.value = _state.value.copy(
@@ -165,7 +179,9 @@ class StudyViewModel(
                 finished = true,
                 canUndo = lastReview != null,
                 previews = emptyMap(),
-                nextDueAt = repository.nextDueAt(deckId)
+                nextDueAt = repository.nextDueAt(deckId),
+                answered = answered,
+                leechWarning = leechWarning
             )
             return
         }
@@ -176,7 +192,9 @@ class StudyViewModel(
             remaining = queue.size,
             finished = false,
             canUndo = lastReview != null,
-            previews = previewsFor(next)
+            previews = previewsFor(next),
+            answered = answered,
+            leechWarning = leechWarning
         )
     }
 
