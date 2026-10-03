@@ -206,13 +206,16 @@ private fun GradeButton(
  * and rounding that down to whole days printed "0d" under three of the four buttons, hiding the
  * very difference the preview exists to show.
  */
-private fun shortInterval(millis: Long): String {
+internal fun shortInterval(millis: Long): String {
     val minutes = millis / 60_000L
     val days = (millis / 86_400_000L).toInt()
     return when {
         minutes < 1 -> "<1m"
         minutes < 60 -> "${minutes}m"
-        minutes < 1440 -> "${(minutes / 60.0).roundToInt()}h"
+        // Floored, not rounded: rounding turns 23h30m into "24h", which is a unit the row never
+        // otherwise prints and which plainly means a day. Understating by under an hour is the
+        // cheaper error on a label this small.
+        minutes < 1440 -> "${minutes / 60}h"
         days < 7 -> "${days}d"
         days < 30 -> "${(days / 7.0).roundToInt()}w"
         days < 365 -> "${(days / 30.0).roundToInt()}mo"
