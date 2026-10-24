@@ -520,6 +520,12 @@ class HeuristicCardGenerator : CardGenerator {
         val PROPER_NOUN_RUN = Regex("""\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})+\b""")
 
         /**
+         * Singular nouns that still end in "s" - "Photosynthesis", "Glass", "Virus", "Physics",
+         * "Nervous" - so a heading ending in one names one thing, not a list.
+         */
+        val NOT_ACTUALLY_PLURAL = listOf("sis", "ss", "us", "ics")
+
+        /**
          * How far past a question to look for a labelled answer. Small on purpose: far enough to
          * survive one stray run landing between them, short enough that it can never reach into
          * the next exercise and steal its answer.

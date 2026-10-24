@@ -492,7 +492,7 @@ sealed class ScriptProfile(val script: ScriptOption) {
 
         object Chinese : Cjk(ScriptOption.CHINESE) {
             override fun definitionQuestion(term: String, plural: Boolean?) = "什么是$term？"
-            override fun listQuestion(subject: String, count: String) = "$subject有哪些？"
+            override fun listQuestion(subject: String, count: String) = "${subject}有哪些？"
         }
 
         object Japanese : Cjk(ScriptOption.JAPANESE) {
@@ -507,7 +507,7 @@ sealed class ScriptProfile(val script: ScriptOption) {
              * sidesteps the agreement entirely.
              */
             override fun definitionQuestion(term: String, plural: Boolean?) = "$term(이)란 무엇입니까?"
-            override fun listQuestion(subject: String, count: String) = "$subject에는 무엇이 있습니까?"
+            override fun listQuestion(subject: String, count: String) = "${subject}에는 무엇이 있습니까?"
         }
     }
 
