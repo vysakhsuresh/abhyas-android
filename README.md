@@ -103,6 +103,11 @@ deck and Biology deck are open at the same time.
 |---|---|---|---|---|---|
 | Latin | English, European | `. ? !` | colon + copula | `Q.` / `Ans.` | terms and digits |
 | Devanagari | Hindi, Marathi, Sanskrit, Nepali (+ Latin) | danda `।॥` | colon + "का अर्थ है" | `प्रश्न` / `उत्तर` | terms and digits |
+
+Lists work in every script through the colon lead-in. Building a list question from a bare
+**heading** needs a dependable test that the heading names a plural category — English has " of "
+and a plural `-s`; Hindi and CJK have no equivalent, so there headings are left alone rather than
+guessed at.
 | Chinese | Simplified, Traditional (+ Latin) | `。？！` | colon | `問` / `答` | digits only |
 | Japanese | Kanji, kana (+ Latin) | `。？！` | colon | `問` / `答` | digits only |
 | Korean | Hangul (+ Latin) | `。？！` | colon | `문제` / `답` | digits only |
@@ -148,13 +153,30 @@ not sentences, so a paragraph arrives pre-shredded at whatever width the page wa
 any generator sees them, and never joins across an ML Kit block boundary, which is what stops a
 caption being welded onto the end of a paragraph.
 
-Then three passes, in descending order of how much the page told us:
+Then four passes, in descending order of how much the page told us:
 
 | Pass | Fires on | Example |
 |---|---|---|
 | **Q&A** | The page already had questions on it | `Q1. Where does photosynthesis take place?` / `Ans. In the chloroplasts.` |
+| **List** | A heading or colon lead-in, then two or more bullets | `Functions of the Liver` + bullets becomes *What are the three functions of the liver?* |
 | **Definition** | `Term: meaning`, or `X is/are/means/refers to Y` | `Chlorophyll: the green pigment...` becomes *What is Chlorophyll?* |
-| **Cloze** | Anything left with a date, figure or distinctive term | `...described by Jan Ingenhousz in 1779.` becomes `...in _____.` |
+| **Cloze** | A connective, or a date, figure or distinctive term | `Igneous rocks form when molten magma cools.` becomes `Igneous rocks form when _____.` |
+
+**Lists are the biggest single source of cards on a real page**, and the engine used to produce
+*nothing* from them — worse, the lead-in guard on the definition pass actively threw away
+"There are three types of rock:" as prose, and the leftover bullets came back as fragments with
+the dash still attached. A heading or colon lead-in followed by bullets is now claimed first,
+before any other pass sees it.
+
+**Connective clozes** reach process and cause-effect writing — most of a science textbook, and
+the part nothing else here could touch. `because`, `due to`, `forms when`, `results in` and the
+rest: blank everything after the connective. It is deliberately grammar-free. No subject is
+extracted, no verb agreed, no question worded, so the card cannot come out ungrammatical however
+odd the sentence around it. Trying to *invert* those sentences is what produced the genuinely
+bad card *"What is Metamorphic rocks form when existing rock?"*.
+
+On a realistic fourteen-line page of headings, bullets and process sentences, the engine went
+from **three cards (one of them wrong, one a bullet fragment) to seven, all correct.**
 
 Everything is scored and sorted so the confident suggestions land at the top of the review
 screen, and the whole thing is biased towards **fewer, better** cards — a student who sees six
@@ -179,6 +201,19 @@ Most of the quality is in the refusals, and each one is there because it produce
   `-ous` are not plurals.
 - A cloze never blanks a word that occurs twice in the sentence, which would leave the answer
   sitting in plain sight inside the question.
+- A **subordinator anywhere in the subject** means it is a clause, not a term. Testing only the
+  start was not enough: *"Metamorphic rocks form when existing rock is changed by heat"* has its
+  `when` in the middle, and the copula pass happily inverted on the `is` inside the clause.
+- **An answer longer than a paragraph is not an answer.** There was a minimum from the start and
+  no maximum, which let a rambling sentence become a card nobody could grade themselves against.
+- A **single stray bullet is not a list**, and a **singular heading is never a list subject** —
+  otherwise "Photosynthesis" becomes *"What are the two photosynthesis?"*.
+- A cloze **blanks a whole name**, not half of one. Leaving "Charles" in the question gives away
+  "Charles Darwin".
+- **Cards already in the deck are not suggested again.** Re-shooting a page is ordinary, and
+  duplicates are worse than missing cards — the scheduler treats them as separate memories, so
+  the user answers the same question twice forever. Matched on normalised text, because OCR will
+  not read a page identically twice.
 - An unlabelled sentence is only taken as an answer when the question carried an explicit `Q`
   label (or `प्रश्न`, `問`, `문제`). A numbered line on its own is far more often a list item
   than a question.

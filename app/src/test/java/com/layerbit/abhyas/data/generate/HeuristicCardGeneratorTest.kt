@@ -7,6 +7,7 @@ import com.layerbit.abhyas.data.ocr.ScriptProfile
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -452,6 +453,183 @@ class HeuristicCardGeneratorTest {
 
         assertNotNull(result.withFront("What is the focal length?"))
         assertNull(result.withFront("What is The focal length?"))
+    }
+
+    // -------------------------------------------------------------- lists and process writing
+
+    /**
+     * A page shaped the way textbooks actually are: headings, bullets, and process sentences.
+     *
+     * Before the list and connective passes this page produced three cards from fourteen lines,
+     * one of them wrong ("What is Metamorphic rocks form when existing rock?") and one a bullet
+     * fragment with the dash still attached.
+     */
+    private val textbookPage = listOf(
+        listOf("Types of Rock"),
+        listOf("Igneous rocks form when molten magma cools and hardens."),
+        listOf("Sedimentary rocks form from compressed layers of sediment."),
+        listOf("Metamorphic rocks form when existing rock is changed by heat and pressure."),
+        listOf("The three main types of rock are:"),
+        listOf("- Igneous"),
+        listOf("- Sedimentary"),
+        listOf("- Metamorphic"),
+        listOf("Plants wilt because they lose water faster than the roots absorb it."),
+        listOf("Functions of the Liver"),
+        listOf("- Produces bile"),
+        listOf("- Stores glycogen"),
+        listOf("- Filters toxins from the blood")
+    )
+
+    @Test
+    fun `a colon lead-in and its bullets become one list card`() {
+        val card = cards(textbookPage, ScriptProfile.Latin)
+            .first { it.front == "What are the three main types of rock?" }
+
+        assertEquals("Igneous, Sedimentary, Metamorphic", card.back)
+        assertEquals(CardKind.LIST, card.kind)
+    }
+
+    @Test
+    fun `a plural heading and its bullets become one list card`() {
+        val card = cards(textbookPage, ScriptProfile.Latin)
+            .first { it.front == "What are the three functions of the liver?" }
+
+        assertEquals("Produces bile, Stores glycogen, Filters toxins from the blood", card.back)
+    }
+
+    @Test
+    fun `a list is the surest thing on a page, so it outranks the definitions`() {
+        val result = cards(textbookPage, ScriptProfile.Latin)
+
+        assertEquals(CardKind.LIST, result.first().kind)
+    }
+
+    @Test
+    fun `the count is not doubled when the lead-in already says how many`() {
+        // "The three main types of rock:" must not ask "the three three main types".
+        val card = cards(textbookPage, ScriptProfile.Latin).first { it.kind == CardKind.LIST }
+
+        assertFalse(card.front.contains("three three"))
+    }
+
+    @Test
+    fun `bullet markers never reach the card`() {
+        // Shipped bug: the cloze pass made "- _____ toxins from the blood" out of a leftover.
+        val result = cards(textbookPage, ScriptProfile.Latin)
+
+        assertTrue(
+            "a dash is layout, not content",
+            result.none { it.front.trimStart().startsWith("-") || it.back.trimStart().startsWith("-") }
+        )
+    }
+
+    @Test
+    fun `a process sentence becomes a cloze rather than a mangled definition`() {
+        // Shipped bug: the copula pass inverted on the "is" inside the subordinate clause and
+        // produced "What is Metamorphic rocks form when existing rock?".
+        val result = cards(textbookPage, ScriptProfile.Latin)
+
+        assertNull(result.withFront("What is Metamorphic rocks form when existing rock?"))
+
+        val card = result.first { it.front == "Igneous rocks form when _____." }
+        assertEquals("molten magma cools and hardens", card.back)
+        assertEquals(CardKind.CLOZE, card.kind)
+    }
+
+    @Test
+    fun `a causal sentence blanks the cause`() {
+        val card = cards(textbookPage, ScriptProfile.Latin)
+            .first { it.front == "Plants wilt because _____." }
+
+        assertEquals("they lose water faster than the roots absorb it", card.back)
+    }
+
+    @Test
+    fun `a connective blank beats a guessed one for the same sentence`() {
+        val result = cards(
+            listOf(listOf("Rust forms when iron reacts with oxygen and water over time.")),
+            ScriptProfile.Latin
+        )
+
+        assertEquals(1, result.size)
+        assertEquals("Rust forms when _____.", result.single().front)
+    }
+
+    @Test
+    fun `a single stray bullet is not a list`() {
+        val result = cards(
+            listOf(listOf("Types of Rock"), listOf("- Igneous")),
+            ScriptProfile.Latin
+        )
+
+        assertTrue("one bullet is a stray dash", result.none { it.kind == CardKind.LIST })
+    }
+
+    @Test
+    fun `a singular heading is never used as a list subject`() {
+        // "Photosynthesis" names one thing, so "What are the two photosynthesis?" is nonsense.
+        val result = cards(
+            listOf(listOf("Photosynthesis"), listOf("- Light stage"), listOf("- Dark stage")),
+            ScriptProfile.Latin
+        )
+
+        assertTrue(result.none { it.kind == CardKind.LIST })
+    }
+
+    @Test
+    fun `an answer longer than a paragraph is refused`() {
+        val rambling = "Osmosis: " + "the movement of water across a membrane ".repeat(12) + "."
+        val result = cards(listOf(listOf(rambling)), ScriptProfile.Latin)
+
+        assertTrue(
+            "nobody can grade themselves honestly against a paragraph",
+            result.none { it.kind == CardKind.DEFINITION }
+        )
+    }
+
+    @Test
+    fun `a cloze blanks a whole name, not half of one`() {
+        val result = cards(
+            listOf(listOf("The theory of evolution was set out by Charles Darwin in his book.")),
+            ScriptProfile.Latin
+        )
+
+        val cloze = result.first { it.kind == CardKind.CLOZE }
+        assertEquals("Charles Darwin", cloze.back)
+        assertFalse("half a name left in the question gives it away", cloze.front.contains("Charles"))
+    }
+
+    @Test
+    fun `a Hindi colon lead-in and its bullets become a list card`() {
+        val result = cards(
+            listOf(
+                listOf("चट्टानों के प्रकार:"),
+                listOf("- आग्नेय चट्टान"),
+                listOf("- अवसादी चट्टान"),
+                listOf("- कायांतरित चट्टान")
+            ),
+            ScriptProfile.Devanagari
+        )
+
+        val card = result.first { it.kind == CardKind.LIST }
+        assertTrue("the question must be worded in Hindi", card.front.endsWith("कौन से हैं?"))
+        assertTrue(card.back.contains("आग्नेय चट्टान"))
+    }
+
+    @Test
+    fun `a Chinese colon lead-in and its bullets become a list card`() {
+        val result = cards(
+            listOf(
+                listOf("岩石的三种类型："),
+                listOf("- 火成岩"),
+                listOf("- 沉积岩"),
+                listOf("- 变质岩")
+            ),
+            ScriptProfile.Cjk.Chinese
+        )
+
+        val card = result.first { it.kind == CardKind.LIST }
+        assertTrue(card.front.endsWith("有哪些？"))
     }
 
     // ------------------------------------------------------------------------------------ shared

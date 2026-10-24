@@ -8,7 +8,7 @@ enum class CardKind(val label: String) {
     /** "X: y" or "X is y" - the page defined a term. */
     DEFINITION("Definition"),
 
-    /** A heading and the items under it. */
+    /** A heading or lead-in, and the items listed under it. */
     LIST("List"),
 
     /** A sentence with one significant value blanked out. */

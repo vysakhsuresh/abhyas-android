@@ -117,6 +117,47 @@ sealed class ScriptProfile(val script: ScriptOption) {
     open val subordinatorStarts: List<String> = emptyList()
 
     /**
+     * Connective phrases where blanking everything after them always makes a good card.
+     *
+     * This is the pass that unlocks process and cause-effect writing, which is most of a science
+     * textbook and which the definition passes cannot touch: "Igneous rocks form when molten
+     * magma cools" has no colon and no copula to invert, and trying to invert it produced the
+     * genuinely bad card "What is Igneous rocks form when molten magma?".
+     *
+     * Blanking after the connective sidesteps grammar entirely - no subject has to be extracted,
+     * no verb agreed, no question worded. The clause after the connective simply *is* the fact
+     * being taught, so the card writes itself and cannot be ungrammatical.
+     *
+     * Multi-word phrases only. A bare " when " or " if " matches far too much ordinary prose.
+     */
+    open val connectives: List<String> = emptyList()
+
+    /**
+     * Longest an answer may be before it stops being an answer.
+     *
+     * There was a minimum from the start and no maximum, which let a rambling sentence become a
+     * card whose back is a paragraph. Nobody can grade themselves honestly against a paragraph.
+     */
+    open val maxAnswerChars: Int = 200
+
+    /**
+     * The word that makes a heading read as "a list of things" - " of " in English.
+     *
+     * Null disables building a list question from a heading in this script, which is the honest
+     * setting where there is no dependable test: a heading is only usable as a question subject
+     * if it names a plural category, and getting that wrong turns "Photosynthesis" into
+     * "What are the three photosynthesis?". Scripts with null still handle lists introduced by a
+     * colon, which is unambiguous everywhere.
+     */
+    open val listSubjectInfix: String? = null
+
+    /** Counting words, so a list question can say "the three types" rather than "the types". */
+    open val numberWords: List<String> = emptyList()
+
+    /** The question that asks for a list of [subject]. [count] is already-worded, or blank. */
+    open fun listQuestion(subject: String, count: String): String = "$count$subject"
+
+    /**
      * Nouns too generic to define on their own. Only consulted for a subject of the form
      * "The <noun>", where the definite article means the reader is expected to already know
      * which one - and a card asking about it out of context is unanswerable.
@@ -203,6 +244,27 @@ sealed class ScriptProfile(val script: ScriptOption) {
             """^(chapter|unit|lesson|section|part|exercise|topic|module)\b""",
             RegexOption.IGNORE_CASE
         )
+
+        override val connectives = listOf(
+            // cause
+            " because ", " due to ", " caused by ", " owing to ",
+            // consequence
+            " results in ", " leads to ", " in order to ",
+            // process and condition - the ones a textbook uses constantly
+            " occurs when ", " occur when ", " forms when ", " form when ",
+            " happens when ", " happen when ", " takes place when ",
+            " forms from ", " form from ", " formed from ", " formed by ", " derived from "
+        )
+
+        override val listSubjectInfix = " of "
+
+        override val numberWords = listOf(
+            "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"
+        )
+
+        override fun listQuestion(subject: String, count: String): String =
+            if (subject.startsWith("the ")) "What are $subject?"
+            else "What are the $count$subject?"
 
         override val pronounStarts = listOf(
             "it", "this", "that", "they", "these", "those", "there", "he", "she", "we", "you",
@@ -321,6 +383,20 @@ sealed class ScriptProfile(val script: ScriptOption) {
 
         override val pronounStarts = listOf("यह", "वह", "ये", "वे", "इस", "उस", "जो", "यहाँ")
 
+        override val connectives = listOf(" के कारण ", " के फलस्वरूप ", " के परिणामस्वरूप ")
+
+        override val numberWords = listOf(
+            "एक", "दो", "तीन", "चार", "पाँच", "छह", "सात", "आठ", "नौ", "दस"
+        )
+
+        /**
+         * No [listSubjectInfix]: Hindi has no single particle that marks a heading as a plural
+         * category the way English's "of" does, so headings are not used as question subjects
+         * here. A colon-introduced list still works, and that is unambiguous in any script.
+         */
+        override fun listQuestion(subject: String, count: String): String =
+            "$count$subject कौन से हैं?"
+
         override val stopwords = setOf(
             "है", "हैं", "था", "थे", "थी", "का", "की", "के", "को", "में", "से", "पर",
             "और", "या", "एक", "यह", "वह", "जो", "कि", "तथा", "एवं", "आदि", "लिए",
@@ -384,6 +460,11 @@ sealed class ScriptProfile(val script: ScriptOption) {
 
         override val headingPrefix = Regex("""^(第|제\d|챕터)""")
 
+        override val connectives = listOf("因为", "由于", "所以", "ため", "ので", "때문에")
+
+        /** CJK packs far more into a character, so a paragraph-length answer is much shorter. */
+        override val maxAnswerChars = 120
+
         override val questionPrefix = Regex(
             """^\s*(問\s*\d*\s*[.):：、]?|问\s*\d*\s*[.):：、]?|문제\s*\d*\s*[.):]?|Q\s*\d*\s*[.):]|\d{1,2}\s*[.)])\s*""",
             RegexOption.IGNORE_CASE
@@ -411,10 +492,12 @@ sealed class ScriptProfile(val script: ScriptOption) {
 
         object Chinese : Cjk(ScriptOption.CHINESE) {
             override fun definitionQuestion(term: String, plural: Boolean?) = "什么是$term？"
+            override fun listQuestion(subject: String, count: String) = "$subject有哪些？"
         }
 
         object Japanese : Cjk(ScriptOption.JAPANESE) {
             override fun definitionQuestion(term: String, plural: Boolean?) = "${term}とは何ですか。"
+            override fun listQuestion(subject: String, count: String) = "${subject}には何がありますか。"
         }
 
         object Korean : Cjk(ScriptOption.KOREAN) {
@@ -424,6 +507,7 @@ sealed class ScriptProfile(val script: ScriptOption) {
              * sidesteps the agreement entirely.
              */
             override fun definitionQuestion(term: String, plural: Boolean?) = "$term(이)란 무엇입니까?"
+            override fun listQuestion(subject: String, count: String) = "$subject에는 무엇이 있습니까?"
         }
     }
 

@@ -109,11 +109,20 @@ class CaptureViewModel(
                 return@launch
             }
 
+            val already = repository.existingQuestions(deckId)
             val candidates = generator.generate(page)
+                .filterNot { AbhyasRepository.normaliseQuestion(it.front) in already }
+
             if (candidates.isEmpty()) {
+                // Told apart from "nothing here is card-shaped", because re-shooting a page you
+                // already did is ordinary and the right response is to move on, not to retake.
                 _step.value = CaptureStep.Empty(
-                    "The text came through, but nothing on this page turned into a good " +
-                        "question. Pages of definitions and explanations work best."
+                    if (already.isEmpty()) {
+                        "The text came through, but nothing on this page turned into a good " +
+                            "question. Pages of definitions, lists and explanations work best."
+                    } else {
+                        "Everything on this page is already in the deck."
+                    }
                 )
                 return@launch
             }

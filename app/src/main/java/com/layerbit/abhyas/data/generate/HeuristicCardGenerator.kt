@@ -33,12 +33,22 @@ class HeuristicCardGenerator : CardGenerator {
         // "Ans." labels it keys off - splitting reads the stop in "Q1." as a sentence end and
         // discards the fragment. The runs it consumes are then withheld from the later passes so
         // one worked exercise cannot also come back as a mangled cloze of its own question.
-        val qa = explicitQa(runs, profile)
+        // Lists are claimed first. A bullet under a heading is the single most card-shaped thing
+        // on a textbook page and the other passes can make nothing of it - they used to produce
+        // fragments like "- _____ toxins from the blood" from the leftovers.
+        val lists = listPass(runs, profile)
+        val claimed = qaOrListClaimed(lists)
+
+        val qa = explicitQa(runs, profile, claimed)
+
         val sentences = runs
-            .filterIndexed { index, _ -> index !in qa.consumedRuns }
-            .flatMap { page.sentencesOf(it) }
+            .filterIndexed { index, _ -> index !in qa.consumedRuns && index !in claimed }
+            // Strip the bullet marker: it is layout, and leaving it in put a dash on the front
+            // of the card.
+            .flatMap { page.sentencesOf(stripListMarker(it)) }
 
         val candidates = buildList {
+            addAll(lists.map { it.candidate })
             addAll(qa.candidates)
             addAll(definitions(sentences, profile))
             addAll(clozes(sentences, profile))
@@ -67,13 +77,18 @@ class HeuristicCardGenerator : CardGenerator {
      * The page already had questions on it - a worked exercise, or a textbook's end-of-chapter
      * list. Nothing has to be inferred, so these score highest of anything here.
      */
-    private fun explicitQa(runs: List<String>, profile: ScriptProfile): QaPass {
+    private fun explicitQa(
+        runs: List<String>,
+        profile: ScriptProfile,
+        claimed: Set<Int>
+    ): QaPass {
         val out = mutableListOf<CardCandidate>()
         val consumed = mutableSetOf<Int>()
 
         runs.forEachIndexed { index, run ->
-            // A run already claimed as somebody's answer is not also the next question.
-            if (index in consumed) return@forEachIndexed
+            // A run already claimed as somebody's answer, or as part of a list, is not also the
+            // next question.
+            if (index in consumed || index in claimed) return@forEachIndexed
 
             val question = profile.questionPrefix.find(run) ?: return@forEachIndexed
             val questionText = run.removeRange(question.range).trim()
@@ -112,7 +127,9 @@ class HeuristicCardGenerator : CardGenerator {
                 if (profile.questionPrefix.containsMatchIn(following)) return@forEachIndexed
                 following.trim()
             }
-            if (answerText.length < profile.minAnswerChars) return@forEachIndexed
+            if (answerText.length !in profile.minAnswerChars..profile.maxAnswerChars) {
+                return@forEachIndexed
+            }
 
             out += CardCandidate(
                 front = questionText.ensureQuestionMark(profile),
@@ -132,6 +149,116 @@ class HeuristicCardGenerator : CardGenerator {
         val trimmed = label.trimStart()
         return QUESTION_WORDS.any { trimmed.startsWith(it, ignoreCase = true) }
     }
+
+    // ----------------------------------------------------------------------------------- lists
+
+    /** A list card, plus which runs it used up. */
+    private class ListHit(val candidate: CardCandidate, val runIndices: Set<Int>)
+
+    private fun qaOrListClaimed(lists: List<ListHit>): Set<Int> =
+        lists.flatMapTo(mutableSetOf()) { it.runIndices }
+
+    /**
+     * A heading or lead-in followed by bullet points.
+     *
+     * Textbooks are full of these and the engine used to produce *nothing* from them - worse,
+     * the lead-in guard on the definition pass explicitly threw away "There are three types of
+     * rock:" as prose, and the cloze pass turned the leftover bullets into fragments with the
+     * dash still attached.
+     *
+     * Two ways in. A lead-in ending in a colon is unambiguous and works in every script. A bare
+     * heading is only usable where the language gives a dependable test that it names a plural
+     * category - see [ScriptProfile.listSubjectInfix] - because getting that wrong turns
+     * "Photosynthesis" into "What are the three photosynthesis?".
+     */
+    private fun listPass(runs: List<String>, profile: ScriptProfile): List<ListHit> {
+        val out = mutableListOf<ListHit>()
+        var index = 0
+
+        while (index < runs.size) {
+            if (!isListItem(runs[index])) {
+                index++
+                continue
+            }
+
+            var end = index
+            while (end < runs.size && isListItem(runs[end])) end++
+
+            val items = (index until end).map { stripListMarker(runs[it]) }
+                .filter { it.isNotBlank() }
+
+            val introAt = index - 1
+            val intro = runs.getOrNull(introAt)
+            val subject = intro?.let { listSubject(it, profile) }
+
+            if (items.size >= MIN_LIST_ITEMS && subject != null) {
+                val answer = items.joinToString(", ")
+                if (answer.length in profile.minAnswerChars..profile.maxAnswerChars) {
+                    out += ListHit(
+                        candidate = CardCandidate(
+                            front = profile.listQuestion(subject, countWord(items.size, subject, profile)),
+                            back = answer,
+                            sourceText = (listOf(intro) + runs.subList(index, end)).joinToString(" "),
+                            kind = CardKind.LIST,
+                            // Higher than any definition: the page laid this out as a list, so
+                            // nothing is being inferred about what belongs together.
+                            confidence = 0.92f
+                        ),
+                        runIndices = (introAt..end - 1).toSet()
+                    )
+                }
+            }
+            index = end
+        }
+        return out
+    }
+
+    /** What the list is a list *of*, phrased so it can be dropped into a question. */
+    private fun listSubject(intro: String, profile: ScriptProfile): String? {
+        val trimmed = intro.trim()
+
+        if (trimmed.lastOrNull()?.let { it in COLONS } == true) {
+            var subject = trimmed.dropLast(1).trim()
+            if (subject.isEmpty()) return null
+            if (profile.headingPrefix?.containsMatchIn(subject) == true) return null
+
+            // "There are three types of rock:" -> "the three types of rock"
+            THERE_IS_ARE.find(subject)?.let { subject = "the " + subject.removeRange(it.range) }
+            // "The three types of rock are:" -> "the three types of rock"
+            TRAILING_COPULA.find(subject)?.let { subject = subject.removeRange(it.range).trim() }
+
+            if (profile.units(subject) !in 1..MAX_LIST_SUBJECT_UNITS) return null
+            return if (profile.wordSpaced) subject.replaceFirstChar { it.lowercase() } else subject
+        }
+
+        // A bare heading. Only where the script can tell a plural category from a single term.
+        val infix = profile.listSubjectInfix ?: return null
+        if (trimmed.lastOrNull()?.let { it in profile.sentenceEnders } == true) return null
+        if (profile.headingPrefix?.containsMatchIn(trimmed) == true) return null
+        if (profile.units(trimmed) !in 1..MAX_LIST_SUBJECT_UNITS) return null
+
+        val lowered = trimmed.lowercase()
+        val readsPlural = lowered.contains(infix) ||
+            (lowered.endsWith("s") && NOT_ACTUALLY_PLURAL.none { lowered.endsWith(it) })
+        return if (readsPlural) lowered else null
+    }
+
+    /**
+     * "three " when the subject does not already say how many, blank when it does - otherwise a
+     * page reading "The three main types of rock:" asks "What are the three three main types".
+     */
+    private fun countWord(count: Int, subject: String, profile: ScriptProfile): String {
+        val words = profile.numberWords
+        if (count !in 1..words.size) return ""
+        if (words.any { subject.contains(it, ignoreCase = true) }) return ""
+        if (DIGITS.containsMatchIn(subject)) return ""
+        return words[count - 1] + if (profile.wordSpaced) " " else ""
+    }
+
+    private fun isListItem(run: String): Boolean = LIST_MARKER.containsMatchIn(run)
+
+    private fun stripListMarker(run: String): String =
+        LIST_MARKER.find(run)?.let { run.removeRange(it.range).trim() } ?: run
 
     // ------------------------------------------------------------------------------ definitions
 
@@ -169,7 +296,7 @@ class HeuristicCardGenerator : CardGenerator {
         // "Chapter 4: Photosynthesis" is a title that happens to contain a colon.
         if (profile.headingPrefix?.containsMatchIn(term) == true) return null
         if (profile.units(term) !in 1..profile.maxTermUnits) return null
-        if (definition.length < profile.minAnswerChars) return null
+        if (definition.length !in profile.minAnswerChars..profile.maxAnswerChars) return null
         // "There are three reasons: ..." - a left side that is a sentence, not a term.
         if (term.lowercase().startsWithAny(profile.leadInStarts)) return null
         if (term.last() in ",;") return null
@@ -198,13 +325,16 @@ class HeuristicCardGenerator : CardGenerator {
         val predicate = sentence.drop(match.range.last + 1).trim().trimEnd('.')
 
         if (profile.units(subject) !in 1..profile.maxTermUnits) return null
-        if (predicate.length < profile.minAnswerChars) return null
+        if (predicate.length !in profile.minAnswerChars..profile.maxAnswerChars) return null
 
         val lowered = subject.lowercase()
         // "It is...", "This is...", "There are..." define nothing without their antecedent.
         if (lowered.startsWithAny(profile.pronounStarts)) return null
-        // "If that bites, X is..." states a condition, not a definition.
-        if (lowered.startsWithAny(profile.subordinatorStarts)) return null
+        // A subordinator ANYWHERE in the subject means this is a clause, not a term. Anchoring
+        // the test at the start was not enough: "Metamorphic rocks form when existing rock is
+        // changed by heat" has its "when" in the middle, and the pass happily produced
+        // "What is Metamorphic rocks form when existing rock?".
+        if (profile.subordinatorStarts.any { " $lowered ".contains(" $it ") }) return null
         // A subject that still carries a comma is a clause, not a term.
         if (subject.contains(',')) return null
         // "The generator is..." expects the reader to know which generator already.
@@ -238,7 +368,7 @@ class HeuristicCardGenerator : CardGenerator {
         val meaning = sentence.drop(match.range.last + 1).trim().trimEnd('.')
 
         if (profile.units(term) !in 1..profile.maxTermUnits) return null
-        if (meaning.length < profile.minAnswerChars) return null
+        if (meaning.length !in profile.minAnswerChars..profile.maxAnswerChars) return null
         if (term.startsWithAny(profile.pronounStarts)) return null
 
         return CardCandidate(
@@ -260,11 +390,56 @@ class HeuristicCardGenerator : CardGenerator {
      * [ScriptProfile.salientTerm] picks - which is nothing at all for CJK, where choosing a term
      * would mean guessing at word boundaries that whitespace does not mark.
      */
+    /**
+     * Blank everything after a connective: "Igneous rocks form when _____."
+     *
+     * This is the pass that reaches process and cause-effect writing, which is most of a science
+     * textbook and which nothing else here can touch. Those sentences have no colon and no
+     * invertible copula, and trying to invert one produced the genuinely bad card "What is
+     * Metamorphic rocks form when existing rock?".
+     *
+     * It is deliberately grammar-free. No subject is extracted, no verb agreed, no question
+     * worded - the clause after the connective simply *is* the fact being taught, so the card
+     * cannot come out ungrammatical however odd the sentence around it.
+     *
+     * Scored above a plain cloze because the blank is chosen rather than guessed: a connective
+     * marks the fact, where [clozes] is picking the most distinctive-looking word and hoping.
+     */
+    private fun connectiveCloze(sentence: String, profile: ScriptProfile): CardCandidate? {
+        val lowered = sentence.lowercase()
+
+        profile.connectives.forEach { connective ->
+            val at = lowered.indexOf(connective)
+            if (at <= 0) return@forEach
+
+            val head = sentence.take(at + connective.length)
+            val tail = sentence.drop(at + connective.length).trim().trimEnd('.')
+
+            // A connective at the very start leaves nothing to hang the blank on.
+            if (profile.units(head) < MIN_CONNECTIVE_HEAD_UNITS) return@forEach
+            if (tail.length !in profile.minAnswerChars..profile.maxAnswerChars) return@forEach
+
+            return CardCandidate(
+                front = head + BLANK + ".",
+                back = tail,
+                sourceText = sentence,
+                kind = CardKind.CLOZE,
+                confidence = 0.75f
+            )
+        }
+        return null
+    }
+
     private fun clozes(sentences: List<String>, profile: ScriptProfile): List<CardCandidate> =
         sentences.mapNotNull { sentence ->
+            // A chosen blank beats a guessed one, so this is tried first and is not bounded by
+            // the cloze length range - a process sentence is often longer than a factual one.
+            connectiveCloze(sentence, profile)?.let { return@mapNotNull it }
+
             if (profile.units(sentence) !in profile.clozeRange) return@mapNotNull null
 
             val target = NUMERIC.find(sentence)?.let { it.value to 0.68f }
+                ?: properNounRun(sentence)?.let { it to 0.60f }
                 ?: profile.salientTerm(sentence)?.let { it to 0.55f }
                 ?: return@mapNotNull null
 
@@ -315,8 +490,34 @@ class HeuristicCardGenerator : CardGenerator {
         return body.ifEmpty { trimmed } + if (profile.wordSpaced) "?" else "？"
     }
 
+    /**
+     * A run of capitalised words - "Jan Ingenhousz", not "Ingenhousz".
+     *
+     * Blanking half a name leaves the other half sitting in the question, which is not a harder
+     * card so much as a nonsensical one.
+     */
+    private fun properNounRun(sentence: String): String? {
+        val afterFirstWord = sentence.substringAfter(' ', "")
+        return PROPER_NOUN_RUN.find(afterFirstWord)?.value
+    }
+
     private companion object {
         const val MAX_CARDS_PER_PAGE = 12
+
+        /** One bullet is a stray dash; two is a list. */
+        const val MIN_LIST_ITEMS = 2
+
+        /** A lead-in longer than this is prose that happens to end in a colon. */
+        const val MAX_LIST_SUBJECT_UNITS = 10
+
+        /** Enough of a sentence before the connective to make the blank mean something. */
+        const val MIN_CONNECTIVE_HEAD_UNITS = 3
+
+        val LIST_MARKER = Regex("""^\s*([-*\u2022\u25CF\u25A0]|\(?\d{1,2}[.)]|[a-z][.)])\s+""")
+        val DIGITS = Regex("""\d""")
+        val THERE_IS_ARE = Regex("""^(there\s+(are|is)\s+)""", RegexOption.IGNORE_CASE)
+        val TRAILING_COPULA = Regex("""\s+(are|is|include|includes)$""", RegexOption.IGNORE_CASE)
+        val PROPER_NOUN_RUN = Regex("""\b[A-Z][a-z]{2,}(?:\s+[A-Z][a-z]{2,})+\b""")
 
         /**
          * How far past a question to look for a labelled answer. Small on purpose: far enough to

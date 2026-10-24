@@ -272,6 +272,10 @@ interface CardDao {
 
     @Query("SELECT * FROM cards")
     suspend fun allCards(): List<CardEntity>
+
+    /** Just the questions in one deck, for keeping a second photograph from re-suggesting them. */
+    @Query("SELECT front FROM cards WHERE deckId = :deckId")
+    suspend fun frontsInDeck(deckId: Long): List<String>
 }
 
 /** One day's answer count, for the streak strip on the stats screen. */

@@ -112,6 +112,39 @@ class AbhyasRepository(private val db: AbhyasDatabase) {
 
     suspend fun updateCard(card: CardEntity) = cards.update(card)
 
+    /**
+     * The questions already in this deck, normalised for comparison.
+     *
+     * Photographing the same page twice is ordinary - a student re-shoots a blurred page, or
+     * forgets they did that chapter last week - and without this it produces a second copy of
+     * every card. Duplicates are worse than missing cards: the scheduler treats them as separate
+     * memories, so the user answers the same question twice forever.
+     *
+     * Normalised rather than exact, because OCR will not read a page identically twice. Case and
+     * punctuation go; the words have to match.
+     */
+    suspend fun existingQuestions(deckId: Long): Set<String> =
+        cards.frontsInDeck(deckId).mapTo(mutableSetOf()) { normaliseQuestion(it) }
+
+    companion object {
+        /**
+         * New cards introduced per sitting. Twenty is Anki's long-standing default and it holds
+         * up: each one will be seen several times today and then on a growing schedule for
+         * months, so the real cost of a new card is much larger than it looks on the day.
+         */
+        const val DEFAULT_NEW_PER_SESSION = 20
+
+        private val NON_COMPARABLE = Regex("""[^\p{L}\p{N} ]""")
+        private val REPEATED_SPACE = Regex("""\s+""")
+
+        /** Lower-cased, stripped of punctuation, single-spaced. */
+        fun normaliseQuestion(text: String): String =
+            text.lowercase()
+                .replace(NON_COMPARABLE, " ")
+                .replace(REPEATED_SPACE, " ")
+                .trim()
+    }
+
     suspend fun deleteCard(card: CardEntity) = cards.delete(card)
 
     suspend fun setSuspended(card: CardEntity, suspended: Boolean) =
@@ -343,14 +376,7 @@ class AbhyasRepository(private val db: AbhyasDatabase) {
     private suspend fun <T> atomically(block: suspend () -> T): T =
         withContext(NonCancellable) { db.withTransaction { block() } }
 
-    companion object {
-        /**
-         * New cards introduced per sitting. Twenty is Anki's long-standing default and it holds
-         * up: each one will be seen several times today and then on a growing schedule for
-         * months, so the real cost of a new card is much larger than it looks on the day.
-         */
-        const val DEFAULT_NEW_PER_SESSION = 20
-    }
+
 }
 
 /**
