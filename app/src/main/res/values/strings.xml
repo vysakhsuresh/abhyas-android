@@ -113,8 +113,8 @@
     <string name="intro_step_3">Study a few minutes a day. Each card comes back just before you would forget it.</string>
     <string name="intro_example_from">From a page like this</string>
     <string name="intro_example_source">Mitochondria: the organelle that releases energy from food, producing ATP.</string>
-    <string name="intro_example_front">What is mitochondria?</string>
-    <string name="intro_example_back">The organelle that releases energy from food, producing ATP.</string>
+    <string name="intro_example_front">What do mitochondria do?</string>
+    <string name="intro_example_back">Release energy from food, producing ATP.</string>
     <string name="intro_start">Make my first deck</string>
     <string name="intro_dismiss">I know how it works</string>
 

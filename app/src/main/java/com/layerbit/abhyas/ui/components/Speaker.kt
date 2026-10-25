@@ -1,15 +1,13 @@
 package com.layerbit.abhyas.ui.components
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.Voice
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.layerbit.abhyas.data.ocr.ScriptOption
 import java.util.Locale
@@ -22,42 +20,72 @@ import java.util.Locale
  * same leak by another route, so a network voice is never chosen: only voices that declare they
  * need no connection, and the request itself asks for local synthesis. A phone with no offline
  * voice for the language simply has the speak button do nothing rather than send the text away.
+ *
+ * The engine is started on the first tap of "Listen", not when the study screen opens. Binding it
+ * starts a whole separate process, and most sittings never ask for speech - paying that on every
+ * study screen would cost memory and battery for a feature that is usually unused.
  */
 class Speaker(context: Context) : TextToSpeech.OnInitListener {
 
-    private val tts = TextToSpeech(context.applicationContext, this)
+    private val appContext = context.applicationContext
 
-    /** Compose state, so the speak button appears only once there is an engine behind it. */
-    var isReady by mutableStateOf(false)
-        private set
+    /**
+     * Whether any speech engine is installed. A package query, which is cheap and does not start the
+     * engine - it is what decides whether "Listen" is offered at all.
+     */
+    val isAvailable: Boolean = runCatching {
+        appContext.packageManager
+            .queryIntentServices(Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE), 0)
+            .isNotEmpty()
+    }.getOrDefault(false)
+
+    private var tts: TextToSpeech? = null
+    private var ready = false
+    private var pending: Pair<String, ScriptOption>? = null
 
     override fun onInit(status: Int) {
-        isReady = status == TextToSpeech.SUCCESS
+        ready = status == TextToSpeech.SUCCESS
+        pending?.let { (text, script) -> say(text, script) }
+        pending = null
     }
 
     fun speak(text: String, script: ScriptOption) {
-        if (!isReady || text.isBlank()) return
+        if (!isAvailable || text.isBlank()) return
+        if (ready) {
+            say(text, script)
+            return
+        }
+        // Not started yet, or still starting: remember the request and say it once it is ready.
+        pending = text to script
+        if (tts == null) tts = runCatching { TextToSpeech(appContext, this) }.getOrNull()
+    }
+
+    private fun say(text: String, script: ScriptOption) {
+        val engine = tts ?: return
         runCatching {
-            val locale = localeFor(script)
-            val voice = offlineVoiceFor(locale) ?: return
-            tts.voice = voice
+            val voice = offlineVoiceFor(engine, localeFor(script)) ?: return
+            engine.voice = voice
             val params = Bundle().apply {
                 putString(TextToSpeech.Engine.KEY_FEATURE_NETWORK_SYNTHESIS, "false")
                 putString(TextToSpeech.Engine.KEY_FEATURE_EMBEDDED_SYNTHESIS, "true")
             }
-            tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, UTTERANCE_ID)
+            engine.speak(text, TextToSpeech.QUEUE_FLUSH, params, UTTERANCE_ID)
         }
     }
 
     fun stop() {
-        runCatching { tts.stop() }
+        pending = null
+        runCatching { tts?.stop() }
     }
 
     fun shutdown() {
+        pending = null
         runCatching {
-            tts.stop()
-            tts.shutdown()
+            tts?.stop()
+            tts?.shutdown()
         }
+        tts = null
+        ready = false
     }
 
     /**
@@ -65,8 +93,8 @@ class Speaker(context: Context) : TextToSpeech.OnInitListener {
      * same country preferred - an en-GB voice reading an Indian student's English deck is fine; a
      * French voice reading it is not.
      */
-    private fun offlineVoiceFor(locale: Locale): Voice? {
-        val offline = tts.voices.orEmpty().filter { voice ->
+    private fun offlineVoiceFor(engine: TextToSpeech, locale: Locale): Voice? {
+        val offline = engine.voices.orEmpty().filter { voice ->
             !voice.isNetworkConnectionRequired &&
                 TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED !in voice.features.orEmpty() &&
                 voice.locale.language == locale.language

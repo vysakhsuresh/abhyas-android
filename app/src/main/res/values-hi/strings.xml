@@ -105,8 +105,8 @@
     <string name="intro_step_3">रोज़ कुछ मिनट पढ़िए। हर कार्ड ठीक उस समय लौटता है जब आप उसे भूलने वाले होते हैं।</string>
     <string name="intro_example_from">ऐसे पन्ने से</string>
     <string name="intro_example_source">माइटोकॉन्ड्रिया: वह कोशिकांग जो भोजन से ऊर्जा निकालकर ATP बनाता है।</string>
-    <string name="intro_example_front">माइटोकॉन्ड्रिया क्या है?</string>
-    <string name="intro_example_back">वह कोशिकांग जो भोजन से ऊर्जा निकालकर ATP बनाता है।</string>
+    <string name="intro_example_front">माइटोकॉन्ड्रिया क्या करता है?</string>
+    <string name="intro_example_back">भोजन से ऊर्जा निकालकर ATP बनाता है।</string>
     <string name="intro_start">मेरा पहला डेक बनाएँ</string>
     <string name="intro_dismiss">मुझे पता है यह कैसे चलता है</string>
 

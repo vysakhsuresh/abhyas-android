@@ -254,13 +254,19 @@ fun DeckScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    SectionLabel(
-                        text = stringResource(R.string.deck_subdecks),
-                        color = AbhyasColors.Dim,
-                        fontSize = 10.5.sp,
-                        fontWeight = FontWeight.Medium,
-                        letterSpacing = 1.2.sp
-                    )
+                    // The heading only once there is something under it; until then the link alone
+                    // says the option exists without a labelled empty section.
+                    if (subdecks.isNotEmpty()) {
+                        SectionLabel(
+                            text = stringResource(R.string.deck_subdecks),
+                            color = AbhyasColors.Dim,
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Medium,
+                            letterSpacing = 1.2.sp
+                        )
+                    } else {
+                        Spacer(Modifier.width(1.dp))
+                    }
                     TextLink(
                         stringResource(R.string.deck_add_subdeck),
                         AbhyasColors.Saffron,

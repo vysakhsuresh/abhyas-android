@@ -222,12 +222,12 @@ private fun CardFace(card: CardEntity, state: StudyState, speaker: Speaker) {
 }
 
 /**
- * "Listen" under a side of the card, shown only once an engine is ready - a speak button that does
+ * "Listen" under a side of the card, shown only when a speech engine is installed - a button that does
  * nothing on a phone without one would look broken.
  */
 @Composable
 private fun SpeakLink(speaker: Speaker, onSpeak: () -> Unit) {
-    if (!speaker.isReady) return
+    if (!speaker.isAvailable) return
     TextLink(
         text = stringResource(R.string.study_listen),
         color = AbhyasColors.Dim,
