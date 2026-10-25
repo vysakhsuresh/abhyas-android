@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy policy · Abhyas</title>
+<meta name="description" content="Abhyas does not collect, transmit, or share any personal data.">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" type="image/png" href="../icon-512.png">
+<style>
+  :root {
+    --bg: #17122B; --surface: #211B3A; --border: #2E2750;
+    --text: #F3F0FA; --muted: #A79FC4; --accent: #F5A524; --link: #FFD166;
+  }
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #FBF8F2; --surface: #FFFFFF; --border: #E4DDEF;
+      --text: #1E1838; --muted: #5C5478; --accent: #C77D00; --link: #8A5200;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 17px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  .wrap { max-width: 44rem; margin: 0 auto; padding: 2.5rem 1rem 4rem; }
+  header { display: flex; align-items: center; gap: .75rem; margin-bottom: 2rem; }
+  header img { width: 44px; height: 44px; border-radius: 12px; }
+  header a { color: var(--text); text-decoration: none; font-weight: 700; font-size: 1.15rem; }
+  h1 { font-size: clamp(1.75rem, 5vw, 2.3rem); line-height: 1.2; margin: 0 0 .5rem; letter-spacing: -.01em; }
+  h2 { font-size: 1.25rem; margin: 2.4rem 0 .6rem; line-height: 1.3; }
+  p, ul { margin: 0 0 1rem; }
+  ul { padding-left: 1.25rem; }
+  li { margin-bottom: .6rem; }
+  strong { font-weight: 650; }
+  .updated { color: var(--muted); margin-bottom: 1.75rem; }
+  .lead {
+    background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent);
+    border-radius: 12px; padding: 1rem 1.15rem; font-size: 1.08rem; margin-bottom: 1.25rem;
+  }
+  .lead p { margin: 0; }
+  a { color: var(--link); text-underline-offset: 2px; overflow-wrap: anywhere; }
+  a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+  footer { margin-top: 3rem; padding-top: 1.25rem; border-top: 1px solid var(--border); color: var(--muted); font-size: .95rem; }
+  .skip { position: absolute; left: -9999px; }
+  .skip:focus { left: 1rem; top: 1rem; background: var(--surface); color: var(--text); padding: .5rem .75rem; border-radius: 8px; }
+</style>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<div class="wrap">
+  <header>
+    <img src="../icon-512.png" alt="" width="44" height="44">
+    <a href="../">Abhyas</a>
+  </header>
+
+  <main id="main">
+    <h1>Privacy policy for Abhyas</h1>
+    <p class="updated">Last updated: <time datetime="2026-10-25">25 October 2026</time></p>
+
+    <div class="lead">
+      <p>Abhyas does not collect, transmit, or share any personal data. There is no account,
+      no analytics, no advertising, and no server to send anything to.</p>
+    </div>
+
+    <p>This is not a promise that rests on good intentions. The app declares no internet
+    permission at all, and explicitly removes the one that its libraries would otherwise
+    have added. An app without that permission is prevented by Android itself from making
+    a network connection. You can verify this yourself: Android lists an app’s permissions
+    on the Play Store listing and in Settings, and Abhyas asks for exactly two.</p>
+
+    <h2 id="storage">What the app stores, and where</h2>
+    <p>Everything Abhyas keeps is stored on your device, in the app’s own private storage,
+    which no other app can read.</p>
+    <ul>
+      <li><strong>Your decks and cards</strong> — the questions, answers, and the sentence each
+      card was made from.</li>
+      <li><strong>Photos for image-occlusion cards</strong> — when you make a card that hides parts
+      of a picture, that picture is kept privately inside the app’s own storage. It is deleted
+      when the card, or the deck it belongs to, is deleted.</li>
+      <li><strong>Your review history</strong> — when you answered a card and how you graded it.
+      This is what draws your streak and your retention figures.</li>
+      <li><strong>Your settings</strong> — whether you asked for a daily reminder, and at what time.</li>
+      <li><strong>A crash log</strong> — if the app crashes, a record of the error is written to the
+      device so the problem can be diagnosed. It stays on your device and is never sent
+      automatically. Under “Send diagnostics” in Settings you can view it, delete it, or
+      choose to email it to support yourself, through your own mail app — in which case you
+      see exactly what is sent and to whom before anything leaves the phone.</li>
+    </ul>
+    <p>Uninstalling the app deletes all of it. There is no copy anywhere else.</p>
+
+    <h2 id="permissions">The two permissions, and why</h2>
+    <ul>
+      <li><strong>Camera</strong> — to photograph a page of your notes. The photograph is read on
+      your device by an offline text recogniser that ships inside the app, and the file is
+      deleted as soon as the text has been extracted. Abhyas keeps the text, not the
+      photograph. Nothing is uploaded, and no photograph is written to your gallery.
+      (The one exception is a photo you choose to turn into an image-occlusion card, which
+      is kept in the app’s private storage as described above.)</li>
+      <li><strong>Notifications</strong> — only if you switch on the daily reminder, which is off
+      until you turn it on. The reminder is generated on your device; nothing is received
+      from anywhere.</li>
+    </ul>
+    <p>You may also pick an existing image from your gallery instead of taking a photograph.
+    Abhyas reads the image you choose and nothing else, and never deletes or modifies a
+    file you already had.</p>
+
+    <h2 id="offline">Text recognition and speech are offline</h2>
+    <p>The text recognition models are bundled inside the app rather than downloaded or
+    called over the network. Photographing a page works with the phone in aeroplane mode,
+    and that is the test of whether an offline claim is real.</p>
+    <p>When Abhyas reads a card aloud, it uses the text-to-speech engine already installed
+    on your device, working offline. Abhyas itself sends nothing anywhere to produce
+    speech.</p>
+
+    <h2 id="backups">Backups you make yourself</h2>
+    <p>Settings offers an export that writes your whole collection to a single file, at a
+    location you choose. That file is yours: Abhyas does not read it again unless you ask
+    it to restore from it, and does not send it anywhere. If you place it in a folder that
+    a cloud service syncs, that service’s own privacy policy governs the copy it takes.</p>
+    <p>Android’s own automatic backup is switched off for this app, so your collection is not
+    silently copied to your Google account.</p>
+
+    <h2 id="children">Children</h2>
+    <p>Abhyas does not collect data from anyone, including children.</p>
+
+    <h2 id="changes">Changes</h2>
+    <p>If a future version collects anything, this policy will be updated before that version
+    is published, and the change will be described here rather than quietly made.</p>
+
+    <h2 id="contact">Contact</h2>
+    <p>Questions about this policy:
+    <a href="mailto:vysakhsuresh200290@gmail.com"><strong>vysakhsuresh200290@gmail.com</strong></a></p>
+  </main>
+
+  <footer>
+    <p>This page loads no scripts, web fonts, cookies or trackers. <a href="../">Abhyas home</a></p>
+  </footer>
+</div>
+</body>
+</html>

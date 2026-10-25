@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Abhyas · Flashcards from your notes</title>
+<meta name="description" content="Photograph your notes. Abhyas reads them and writes the flashcards for you.">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="dark">
+<link rel="icon" type="image/png" href="icon-512.png">
+<style>
+  :root { --bg: #17122B; --surface: #211B3A; --border: #2E2750; --text: #F3F0FA; --muted: #A79FC4; --accent: #F5A524; --accent-bright: #FFD166; }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(60rem 30rem at 70% 20%, rgba(245,165,36,.14), transparent 70%), var(--bg);
+    color: var(--text); font: 17px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  main { max-width: 36rem; padding: 3rem 1rem; text-align: center; }
+  img { width: 112px; height: 112px; border-radius: 28px; box-shadow: 0 12px 40px rgba(0,0,0,.45); }
+  h1 { font-size: clamp(2.2rem, 8vw, 3rem); margin: 1.25rem 0 .25rem; letter-spacing: -.02em; }
+  .tag { font-size: 1.25rem; color: var(--text); margin: 0 0 1rem; }
+  .tag span { color: var(--accent-bright); }
+  p { color: var(--muted); margin: 0 0 1rem; }
+  .facts { font-size: .95rem; }
+  nav { margin-top: 2rem; display: flex; gap: .75rem; justify-content: center; flex-wrap: wrap; }
+  nav a {
+    color: var(--text); text-decoration: none; border: 1px solid var(--border); background: var(--surface);
+    padding: .65rem 1.1rem; border-radius: 999px; font-weight: 600;
+  }
+  nav a:hover { border-color: var(--accent); }
+  nav a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+</style>
+</head>
+<body>
+<main>
+  <img src="icon-512.png" alt="Abhyas app icon" width="112" height="112">
+  <h1>Abhyas</h1>
+  <p class="tag">Your notes ask the <span>questions.</span></p>
+  <p>Photograph your notes. Abhyas reads them and writes the flashcards for you — on your
+  phone, offline, with no account and no internet permission.</p>
+  <p class="facts">Spaced repetition with FSRS · Latin, Devanagari, Chinese, Japanese and Korean scripts</p>
+  <nav aria-label="Links">
+    <a href="privacy/">Privacy policy</a>
+    <a href="mailto:vysakhsuresh200290@gmail.com">Contact</a>
+  </nav>
+</main>
+</body>
+</html>

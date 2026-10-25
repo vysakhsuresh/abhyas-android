@@ -1,0 +1,399 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  हिन्दी. Plain, everyday Hindi of the kind a school or college student reads - the technical
+  words students already use in English (deck, card, backup, tag) are kept where the Hindi
+  coinage would be stranger to them than the loanword. Every name in values/strings.xml must exist
+  here too.
+-->
+<resources>
+    <string name="tagline">आपके नोट्स ही सवाल पूछते हैं।</string>
+
+    <string name="action_back">वापस</string>
+    <string name="action_cancel">रद्द करें</string>
+    <string name="action_close">बंद करें</string>
+    <string name="action_create">बनाएँ</string>
+    <string name="action_delete">मिटाएँ</string>
+    <string name="action_dismiss">ठीक है</string>
+    <string name="action_done">हो गया</string>
+    <string name="action_edit">बदलें</string>
+    <string name="action_got_it">समझ गया</string>
+    <string name="action_rename">नाम बदलें</string>
+    <string name="action_save">सहेजें</string>
+    <string name="action_set">सेट करें</string>
+    <string name="action_back_to_deck">डेक पर वापस</string>
+    <string name="action_try_another_page">दूसरा पन्ना आज़माएँ</string>
+
+    <string name="a11y_edit_card">यह कार्ड बदलें</string>
+    <string name="a11y_delete_card">यह कार्ड मिटाएँ</string>
+    <string name="a11y_keep_card">यह कार्ड रखें</string>
+    <string name="a11y_undo">पिछला जवाब वापस लें</string>
+    <string name="a11y_listen">यह हिस्सा पढ़कर सुनाएँ</string>
+    <string name="a11y_minutes">मिनट</string>
+    <string name="a11y_put_back">इस कार्ड को डेक में वापस रखें</string>
+    <string name="a11y_forecast_today">आज %1$d</string>
+    <string name="a11y_forecast_tomorrow">कल %1$d</string>
+    <string name="a11y_forecast_day">%1$d दिन बाद %2$d</string>
+    <string name="a11y_occlusion_surface">चित्र। किसी लेबल पर परदा बनाने के लिए खींचें, किसी परदे को चुनने के लिए उस पर टैप करें। %1$d परदे बने हैं।</string>
+
+    <string name="grade_again">फिर से</string>
+    <string name="grade_hard">कठिन</string>
+    <string name="grade_good">ठीक</string>
+    <string name="grade_easy">आसान</string>
+
+    <string name="kind_qa">सवाल-जवाब</string>
+    <string name="kind_definition">परिभाषा</string>
+    <string name="kind_list">सूची</string>
+    <string name="kind_cloze">रिक्त स्थान भरें</string>
+    <string name="kind_table">तालिका</string>
+
+    <string name="state_new">नया</string>
+    <string name="state_learning">सीख रहे हैं</string>
+    <string name="state_review">दोहराव</string>
+    <string name="state_relearning">फिर से सीख रहे हैं</string>
+
+    <string name="script_latin">लैटिन</string>
+    <string name="script_devanagari">देवनागरी</string>
+    <string name="script_chinese">चीनी</string>
+    <string name="script_japanese">जापानी</string>
+    <string name="script_korean">कोरियाई</string>
+    <string name="script_latin_covers">अंग्रेज़ी, रोमन में लिखी हिन्दी, और ज़्यादातर यूरोपीय भाषाएँ</string>
+    <string name="script_devanagari_covers">हिन्दी, मराठी, संस्कृत, नेपाली (और लैटिन)</string>
+    <string name="script_chinese_covers">सरल और पारंपरिक चीनी (और लैटिन)</string>
+    <string name="script_japanese_covers">कांजी, हिरागाना, काताकाना (और लैटिन)</string>
+    <string name="script_korean_covers">हंगुल (और लैटिन)</string>
+    <string name="script_heading">लिपि</string>
+    <string name="script_dialog_title">लिपि</string>
+    <string name="script_dialog_hint">इस डेक के पन्ने किस लिपि में लिखे हैं? लैटिन को छोड़कर हर विकल्प अंग्रेज़ी भी पढ़ता है, इसलिए मिली-जुली भाषा वाली किताब भी ठीक है।</string>
+
+    <string name="label_question">सवाल</string>
+    <string name="label_answer">जवाब</string>
+    <string name="label_name">नाम</string>
+    <string name="label_tags">टैग</string>
+    <string name="tags_placeholder">#अध्याय4 #परीक्षा</string>
+    <string name="from_your_notes">आपके नोट्स से</string>
+    <string name="set_aside">अलग रखा गया</string>
+    <string name="percent">%1$d%%</string>
+
+    <string name="count_due">%1$d बाकी</string>
+    <string name="count_new">%1$d नए</string>
+    <plurals name="count_cards">
+        <item quantity="one">%1$d कार्ड</item>
+        <item quantity="other">%1$d कार्ड</item>
+    </plurals>
+    <plurals name="count_decks">
+        <item quantity="one">%1$d डेक</item>
+        <item quantity="other">%1$d डेक</item>
+    </plurals>
+    <plurals name="streak_days">
+        <item quantity="one">लगातार %1$d दिन</item>
+        <item quantity="other">लगातार %1$d दिन</item>
+    </plurals>
+
+    <string name="nav_find">खोजें</string>
+    <string name="nav_insights">आँकड़े</string>
+    <string name="nav_more">और</string>
+    <string name="decks_new">नया डेक</string>
+    <string name="decks_empty_title">अभी कोई डेक नहीं</string>
+    <string name="decks_empty_message">किसी विषय या अध्याय के लिए एक डेक बनाइए, फिर अपने नोट्स के पन्ने की फ़ोटो लीजिए। अभ्यास उसे पढ़कर कार्ड लिख देता है।</string>
+    <string name="deck_up_to_date">सब पूरा</string>
+    <string name="new_deck_hint">कोई विषय, कोई अध्याय, या जो भी आप दोहरा रहे हों।</string>
+    <string name="new_deck_placeholder">जीव विज्ञान - अध्याय 4</string>
+
+    <string name="intro_title">आपके नोट्स, फ़्लैशकार्ड में</string>
+    <string name="intro_step_1">किसी विषय या अध्याय के लिए एक डेक बनाइए।</string>
+    <string name="intro_step_2">अपने नोट्स के पन्ने की फ़ोटो लीजिए। अभ्यास उसे आपके फ़ोन पर ही पढ़कर कार्ड सुझाता है।</string>
+    <string name="intro_step_3">रोज़ कुछ मिनट पढ़िए। हर कार्ड ठीक उस समय लौटता है जब आप उसे भूलने वाले होते हैं।</string>
+    <string name="intro_example_from">ऐसे पन्ने से</string>
+    <string name="intro_example_source">माइटोकॉन्ड्रिया: वह कोशिकांग जो भोजन से ऊर्जा निकालकर ATP बनाता है।</string>
+    <string name="intro_example_front">माइटोकॉन्ड्रिया क्या है?</string>
+    <string name="intro_example_back">वह कोशिकांग जो भोजन से ऊर्जा निकालकर ATP बनाता है।</string>
+    <string name="intro_start">मेरा पहला डेक बनाएँ</string>
+    <string name="intro_dismiss">मुझे पता है यह कैसे चलता है</string>
+
+    <string name="deck_merge">मिलाएँ</string>
+    <string name="deck_file_under">खिसकाएँ</string>
+    <string name="deck_rename">डेक का नाम बदलें</string>
+    <string name="deck_subdecks">उप-डेक</string>
+    <string name="deck_add_subdeck">उप-डेक जोड़ें</string>
+    <string name="deck_all_cards">सभी कार्ड</string>
+    <string name="deck_empty_title">यह डेक खाली है</string>
+    <string name="deck_empty_message">नोट्स के एक पन्ने की फ़ोटो लीजिए और अभ्यास कार्ड सुझाएगा।</string>
+    <string name="deck_includes_subdecks">सभी उप-डेक शामिल हैं</string>
+    <plurals name="deck_study">
+        <item quantity="one">%1$d कार्ड पढ़ें</item>
+        <item quantity="other">%1$d कार्ड पढ़ें</item>
+    </plurals>
+    <string name="deck_add_from_page">पन्ने से कार्ड जोड़ें</string>
+    <string name="deck_add_image_cards">चित्र वाले कार्ड जोड़ें</string>
+    <string name="deck_reads_pages_in">पन्ने इस लिपि में पढ़ता है</string>
+    <string name="deck_delete_title">यह डेक मिटाएँ?</string>
+    <plurals name="deck_delete_message">
+        <item quantity="one">इसका %1$d कार्ड और उसके बारे में आपने जो कुछ सीखा, सब मिट जाएगा। इसे वापस नहीं लाया जा सकता।</item>
+        <item quantity="other">इसके %1$d कार्ड और उनके बारे में आपने जो कुछ सीखा, सब मिट जाएगा। इसे वापस नहीं लाया जा सकता।</item>
+    </plurals>
+    <string name="deck_delete_keeps_subdecks">इसके उप-डेक बने रहेंगे और सबसे ऊपर के स्तर पर आ जाएँगे।</string>
+    <string name="deck_file_under_title">इस डेक को इसमें रखें</string>
+    <string name="deck_file_under_hint">इसे किसी विषय के अंदर रखिए - जैसे किताब के अंदर अध्याय। इसके कार्ड और समय-सारणी वैसे ही रहेंगे।</string>
+    <string name="deck_file_under_blocked">इस डेक के अपने उप-डेक हैं, इसलिए यह किसी दूसरे डेक के अंदर नहीं जा सकता। डेक सिर्फ़ एक स्तर गहरे होते हैं।</string>
+    <string name="deck_top_level">सबसे ऊपर का स्तर (कोई मूल डेक नहीं)</string>
+    <string name="stat_due">बाकी</string>
+    <string name="stat_new">नए</string>
+    <string name="stat_total">कुल</string>
+    <string name="card_delete_title">यह कार्ड मिटाएँ?</string>
+    <string name="card_delete_message">\"%1$s\" और इसके बारे में आपने जो कुछ सीखा, सब मिट जाएगा। इसे वापस नहीं लाया जा सकता।</string>
+    <string name="card_edit_title">कार्ड बदलें</string>
+    <string name="card_image_row">%1$s · %2$s</string>
+    <string name="schedule_not_studied">अभी पढ़ा नहीं गया</string>
+    <string name="schedule_learning">सीखा जा रहा है</string>
+    <string name="schedule_relearning">एक बार भूला, फिर से सीखा जा रहा है</string>
+    <plurals name="schedule_every_days">
+        <item quantity="one">हर %1$d दिन</item>
+        <item quantity="other">हर %1$d दिन</item>
+    </plurals>
+    <plurals name="schedule_forgotten">
+        <item quantity="one">%1$d बार भूला</item>
+        <item quantity="other">%1$d बार भूला</item>
+    </plurals>
+    <string name="merge_title">कार्ड इसमें भेजें</string>
+    <string name="merge_message">\"%1$s\" का हर कार्ड आपके चुने डेक में चला जाएगा, अपनी समय-सारणी के साथ। फिर \"%1$s\" मिट जाएगा।</string>
+
+    <string name="capture_title">पन्ने की फ़ोटो लें</string>
+    <string name="capture_subtitle">फ़्रेम को लिखावट से भर दीजिए। अच्छी रोशनी मदद करती है।</string>
+    <string name="capture_choose_photo">फ़ोटो चुनें</string>
+    <string name="capture_choose_photos">फ़ोटो चुनें</string>
+    <string name="capture_take_photo">फ़ोटो लें</string>
+    <string name="capture_camera_needed">पन्ने की फ़ोटो लेने के लिए कैमरे की अनुमति चाहिए।\nआप पहले से ली हुई फ़ोटो भी चुन सकते हैं।</string>
+    <string name="capture_save_failed">यह फ़ोटो सहेजी नहीं जा सकी। देखिए कि फ़ोन में जगह है, या पहले से ली हुई फ़ोटो चुनिए।</string>
+    <string name="capture_batch_label">कई पन्ने</string>
+    <string name="capture_batch_hint">एक के बाद एक पन्नों की फ़ोटो लेते रहिए, और आख़िर में सभी सुझाव एक साथ देखिए।</string>
+    <plurals name="capture_page_added">
+        <item quantity="one">पन्ना %1$d पढ़ा गया: %2$d सुझाव</item>
+        <item quantity="other">पन्ना %1$d पढ़ा गया: %2$d सुझाव</item>
+    </plurals>
+    <plurals name="capture_review_all">
+        <item quantity="one">%1$d सुझाव देखें</item>
+        <item quantity="other">%1$d सुझाव देखें</item>
+    </plurals>
+    <string name="capture_reading">पन्ना पढ़ा जा रहा है</string>
+    <string name="capture_reading_of">पन्ना %1$d / %2$d पढ़ा जा रहा है</string>
+    <string name="capture_on_device">यह आपके फ़ोन पर ही होता है। कुछ भी अपलोड नहीं होता।</string>
+    <string name="problem_title">कार्ड बनाने लायक कुछ नहीं मिला</string>
+    <string name="problem_unreadable">यह फ़ोटो पढ़ी नहीं जा सकी। फिर से कोशिश कीजिए।</string>
+    <string name="problem_no_text">इस पन्ने पर %1$s लिखावट नहीं मिली। फ़ोन स्थिर रखिए, फ़्रेम भर दीजिए, और देखिए कि डेक सही लिपि पर सेट है।</string>
+    <string name="problem_nothing_card_shaped">लिखावट तो पढ़ ली गई, पर इस पन्ने से कोई अच्छा सवाल नहीं बना। परिभाषाओं, सूचियों, तालिकाओं और व्याख्याओं वाले पन्ने सबसे अच्छे रहते हैं।</string>
+    <string name="problem_already_in_deck">इस पन्ने का सब कुछ पहले से डेक में है।</string>
+    <string name="saved_none">कुछ नहीं जोड़ा गया</string>
+    <plurals name="saved_count">
+        <item quantity="one">%1$d कार्ड जोड़ा गया</item>
+        <item quantity="other">%1$d कार्ड जोड़े गए</item>
+    </plurals>
+    <string name="saved_none_detail">आपने कोई सुझाव नहीं रखा।</string>
+    <string name="saved_ready">ये अभी पढ़ने के लिए तैयार हैं।</string>
+    <plurals name="review_title">
+        <item quantity="one">%1$d सुझाव</item>
+        <item quantity="other">%1$d सुझाव</item>
+    </plurals>
+    <string name="review_subtitle">जो नहीं चाहिए, उसका निशान हटा दीजिए। बदलने के लिए किसी भी कार्ड पर टैप कीजिए।</string>
+    <plurals name="review_subtitle_pages">
+        <item quantity="one">%1$d पन्ने से। जो नहीं चाहिए उसका निशान हटाइए; बदलने के लिए कार्ड पर टैप कीजिए।</item>
+        <item quantity="other">%1$d पन्नों से। जो नहीं चाहिए उसका निशान हटाइए; बदलने के लिए कार्ड पर टैप कीजिए।</item>
+    </plurals>
+    <string name="review_keep_all">सब रखें</string>
+    <string name="review_drop_all">सब हटाएँ</string>
+    <string name="review_page">पन्ना %1$d</string>
+    <string name="review_done_editing">बदलाव पूरा</string>
+    <string name="review_tags_label">इन कार्डों के टैग (वैकल्पिक)</string>
+    <string name="review_nothing_selected">कुछ नहीं चुना</string>
+    <plurals name="review_add">
+        <item quantity="one">%1$d कार्ड जोड़ें</item>
+        <item quantity="other">%1$d कार्ड जोड़ें</item>
+    </plurals>
+    <string name="review_add_page">एक और पन्ने की फ़ोटो लें</string>
+
+    <string name="occlusion_title">चित्र की फ़ोटो लें</string>
+    <string name="occlusion_subtitle">लेबल वाला कोई चित्र, नक्शा या चार्ट। अगले कदम में आप उसके लेबल छिपाएँगे।</string>
+    <string name="occlusion_retake">कोई दूसरा चित्र लें</string>
+    <string name="occlusion_edit_title">लेबल छिपाएँ</string>
+    <string name="occlusion_edit_hint">हर लेबल पर उँगली खींचकर उसे ढक दीजिए। हर परदा एक कार्ड बनता है।</string>
+    <string name="occlusion_detect">लेबल अपने-आप ढूँढें</string>
+    <string name="occlusion_detecting">लेबल ढूँढे जा रहे हैं…</string>
+    <string name="occlusion_detected_none">कोई लेबल नहीं मिला। हाथ से बनाइए।</string>
+    <plurals name="occlusion_detected">
+        <item quantity="one">%1$d लेबल मिला</item>
+        <item quantity="other">%1$d लेबल मिले</item>
+    </plurals>
+    <string name="occlusion_hidden_label">परदा %1$d के नीचे</string>
+    <string name="occlusion_hidden_label_plain">छिपा हुआ लेबल</string>
+    <string name="occlusion_label_placeholder">इस परदे के नीचे क्या है?</string>
+    <string name="occlusion_remove">यह परदा हटाएँ</string>
+    <string name="occlusion_card_title">शीर्षक</string>
+    <string name="occlusion_card_title_placeholder">हृदय, सामने से</string>
+    <string name="occlusion_default_title">चित्र</string>
+    <string name="occlusion_label_n">लेबल %d</string>
+    <string name="occlusion_draw_first">पहले एक परदा बनाइए</string>
+
+    <string name="study_undo">वापस लें</string>
+    <string name="study_left">%1$d बाकी</string>
+    <string name="study_show_answer">जवाब दिखाएँ</string>
+    <string name="study_listen">सुनें</string>
+    <string name="study_cram_badge">सिर्फ़ अभ्यास - आपकी समय-सारणी नहीं बदलती</string>
+    <string name="study_nothing_due">कुछ बाकी नहीं</string>
+    <string name="study_done">हो गया</string>
+    <string name="study_nothing_waiting">इस डेक में अभी आपके लिए कुछ बाकी नहीं है।</string>
+    <plurals name="study_reviewed">
+        <item quantity="one">%1$d कार्ड दोहराया गया।</item>
+        <item quantity="other">%1$d कार्ड दोहराए गए।</item>
+    </plurals>
+    <string name="study_next_review">अगला दोहराव %1$s।</string>
+    <string name="cram_nothing_matches">इस खोज से कोई कार्ड मेल नहीं खाता।</string>
+    <string name="cram_schedule_untouched">सिर्फ़ अभ्यास: इन जवाबों से यह नहीं बदला कि कार्ड कब लौटेंगे।</string>
+    <string name="tts_blank">रिक्त</string>
+    <string name="leech_title">अलग रखा गया</string>
+    <plurals name="leech_message">
+        <item quantity="one">आप इसे %1$d बार भूल चुके हैं। इसे अलग रख दिया गया है - इतना अटकने वाला कार्ड आमतौर पर दोबारा लिखने लायक होता है, बार-बार दोहराने लायक नहीं।</item>
+        <item quantity="other">आप इसे %1$d बार भूल चुके हैं। इसे अलग रख दिया गया है - इतना अटकने वाला कार्ड आमतौर पर दोबारा लिखने लायक होता है, बार-बार दोहराने लायक नहीं।</item>
+    </plurals>
+    <string name="interval_less_than_minute">&lt;1 मि</string>
+    <string name="interval_minutes">%d मि</string>
+    <string name="interval_hours">%d घं</string>
+    <string name="interval_days">%d दि</string>
+    <string name="interval_weeks">%d स</string>
+    <string name="interval_months">%d मा</string>
+    <string name="interval_years">%s व</string>
+    <string name="when_now">अभी</string>
+    <string name="when_under_a_minute">एक मिनट से कम में</string>
+    <string name="when_tomorrow">कल</string>
+    <plurals name="when_minutes">
+        <item quantity="one">%1$d मिनट में</item>
+        <item quantity="other">%1$d मिनट में</item>
+    </plurals>
+    <plurals name="when_hours">
+        <item quantity="one">%1$d घंटे में</item>
+        <item quantity="other">%1$d घंटे में</item>
+    </plurals>
+    <plurals name="when_days">
+        <item quantity="one">%1$d दिन में</item>
+        <item quantity="other">%1$d दिन में</item>
+    </plurals>
+    <plurals name="when_months">
+        <item quantity="one">%1$d महीने में</item>
+        <item quantity="other">%1$d महीने में</item>
+    </plurals>
+
+    <string name="search_title">कार्ड खोजें</string>
+    <string name="search_placeholder">कार्ड का कोई शब्द</string>
+    <string name="search_empty_title">सभी डेक में एक साथ खोजें</string>
+    <string name="search_empty_message">यह सवाल, जवाब, और वह वाक्य देखता है जिससे कार्ड बना था - अक्सर आधा याद शब्द वहीं होता है। किसी टैग पर टैप करके उसके सभी कार्ड देखिए।</string>
+    <string name="search_none_title">कुछ नहीं मिला</string>
+    <string name="search_none_message">किसी भी डेक के किसी कार्ड में \"%1$s\" नहीं है।</string>
+    <plurals name="cram_study">
+        <item quantity="one">यह %1$d कार्ड अभी पढ़ें</item>
+        <item quantity="other">ये %1$d कार्ड अभी पढ़ें</item>
+    </plurals>
+    <string name="cram_hint">परीक्षा के लिए: सभी कार्ड दिखाता है, चाहे उनकी बारी हो या नहीं, और आपकी असली समय-सारणी को जैसा था वैसा ही छोड़ देता है।</string>
+
+    <string name="insights_title">आँकड़े</string>
+    <string name="insights_subtitle">समय-सारणी असल में कैसा काम कर रही है।</string>
+    <string name="insights_recalled">याद रहे, पिछले 30 दिन</string>
+    <string name="insights_target" formatted="false">लक्ष्य 90%</string>
+    <string name="insights_retention_empty">कुछ कार्ड पढ़िए, यह भर जाएगा।</string>
+    <string name="insights_retention_high">लक्ष्य से आराम से ऊपर। अंतराल लंबे हो सकते हैं - आप ज़रूरत से ज़्यादा दोहरा रहे हैं।</string>
+    <string name="insights_retention_good">बिल्कुल जहाँ होना चाहिए। समय-सारणी आपके लिए सही बैठी है।</string>
+    <string name="insights_retention_low">लक्ष्य से नीचे। उदारता से नहीं, ईमानदारी से जवाब दीजिए - मॉडल जैसे-जैसे सीखेगा कि कौन से कार्ड आपके लिए कठिन हैं, यह अपने-आप सुधरेगा।</string>
+    <string name="insights_where_cards_are">आपके कार्ड कहाँ हैं</string>
+    <string name="insights_no_cards">अभी कोई कार्ड नहीं।</string>
+    <string name="maturity_unseen">अनदेखे</string>
+    <string name="maturity_learning">सीख रहे हैं</string>
+    <string name="maturity_young">3 हफ़्ते से कम</string>
+    <string name="maturity_mature">पक्के</string>
+    <string name="insights_forecast">अगले दो हफ़्तों में बाकी</string>
+    <string name="insights_forecast_total">कुल %1$d</string>
+    <string name="insights_forecast_empty">अगले दो हफ़्तों में कुछ बाकी नहीं।</string>
+    <string name="forecast_today">आज</string>
+    <string name="forecast_two_weeks">2 हफ़्ते बाद</string>
+    <string name="busiest_today">सबसे व्यस्त दिन आज है, %1$s।</string>
+    <string name="busiest_tomorrow">सबसे व्यस्त दिन कल है, %1$s।</string>
+    <string name="busiest_in_days">सबसे व्यस्त दिन %1$d दिन बाद है, %2$s।</string>
+    <string name="fit_heading">आपकी समय-सारणी</string>
+    <string name="fit_explainer">अभ्यास लाखों दूसरे लोगों के दोहरावों पर बनी समय-सारणी से शुरू करता है। जब आपके अपने कुछ सौ दोहराव हो जाएँ, तो यह समय-सारणी को आपकी याददाश्त के असली व्यवहार के हिसाब से ढाल सकता है - इसी फ़ोन पर, कहीं कुछ भेजे बिना।</string>
+    <string name="fit_status_default">सामान्य समय-सारणी चल रही है।</string>
+    <string name="fit_status_personal">आपके हिसाब से ढली समय-सारणी चल रही है।</string>
+    <string name="fit_status_personal_gain">आपके हिसाब से ढली समय-सारणी चल रही है - इसने आपकी याद को सामान्य से %1$s%% बेहतर पहचाना।</string>
+    <string name="fit_running">आपके दोहरावों के हिसाब से ढाला जा रहा है…</string>
+    <plurals name="fit_applied">
+        <item quantity="one">हो गया। %2$d दोहराव पर ढली यह समय-सारणी उन कार्डों पर, जो इसने देखे नहीं थे, आपकी याद को सामान्य से %1$s%% बेहतर पहचानती है। अब यही चल रही है।</item>
+        <item quantity="other">हो गया। %2$d दोहरावों पर ढली यह समय-सारणी उन कार्डों पर, जो इसने देखे नहीं थे, आपकी याद को सामान्य से %1$s%% बेहतर पहचानती है। अब यही चल रही है।</item>
+    </plurals>
+    <plurals name="fit_no_gain">
+        <item quantity="one">%1$d दोहराव पर जाँचा: ढली हुई समय-सारणी सामान्य से बेहतर नहीं थी, इसलिए सामान्य ही रहेगी। और पढ़ने के बाद फिर कोशिश कीजिए।</item>
+        <item quantity="other">%1$d दोहरावों पर जाँचा: ढली हुई समय-सारणी सामान्य से बेहतर नहीं थी, इसलिए सामान्य ही रहेगी। और पढ़ने के बाद फिर कोशिश कीजिए।</item>
+    </plurals>
+    <string name="fit_not_enough">अभी पर्याप्त इतिहास नहीं: अब तक %1$d जवाब, और ईमानदारी से ढालने के लिए कई दिनों में फैले लगभग %2$d चाहिए।</string>
+    <string name="fit_action">समय-सारणी मेरे हिसाब से ढालें</string>
+    <string name="fit_reset">सामान्य समय-सारणी पर लौटें</string>
+    <string name="leech_card_explainer">आप इन्हें इतनी बार भूल चुके हैं कि बार-बार दोहराना बेकार है। इतना अटकने वाला कार्ड अक्सर एक साथ बहुत कुछ समेटने की कोशिश करता है - इसे दो आसान कार्डों में लिखिए, या असहमत हों तो वापस रख दीजिए।</string>
+    <plurals name="forgotten_times">
+        <item quantity="one">%1$d बार भूला</item>
+        <item quantity="other">%1$d बार भूला</item>
+    </plurals>
+    <string name="leech_put_back">वापस रखें</string>
+
+    <string name="settings_title">सेटिंग्स</string>
+    <string name="reminder_title">रोज़ का रिमाइंडर</string>
+    <string name="reminder_off_default">जब तक आप चालू न करें, बंद रहता है।</string>
+    <string name="reminder_at">मुझे इस समय याद दिलाएँ</string>
+    <string name="reminder_explainer">जब कुछ बाकी न हो, या आप उस दिन पढ़ चुके हों, तब रिमाइंडर चुप रहता है। यह आपके फ़ोन से बाहर नहीं जाता - कोई सर्वर नहीं, और कहीं और कुछ गिना नहीं जाता।</string>
+    <string name="reminder_channel_description">जब कार्ड आपका इंतज़ार कर रहे हों, तब एक हल्की याद।</string>
+    <plurals name="reminder_waiting">
+        <item quantity="one">%1$d कार्ड इंतज़ार कर रहा है</item>
+        <item quantity="other">%1$d कार्ड इंतज़ार कर रहे हैं</item>
+    </plurals>
+    <string name="reminder_nudge">अभी के कुछ मिनट बाद के एक घंटे के बराबर हैं।</string>
+    <string name="backup_title">बैकअप</string>
+    <string name="backup_explainer">अभ्यास में कोई खाता और कोई सिंक नहीं है, इसलिए फ़ोन खो जाने पर आपका संग्रह बचाने का यही फ़ाइल एकमात्र तरीका है। इसमें सिर्फ़ शब्द नहीं, आपकी समय-सारणी और चित्र भी होते हैं।</string>
+    <string name="backup_export">फ़ाइल में निर्यात करें</string>
+    <string name="backup_restore">फ़ाइल से वापस लाएँ</string>
+    <string name="backup_restore_note">वापस लाने से आपका मौजूदा संग्रह बदलता नहीं, उसमें जुड़ता है - इसलिए गलत फ़ाइल का नुकसान बस कुछ डेक मिटाना है, सब कुछ खोना नहीं।</string>
+    <string name="diagnostics_title">डायग्नोस्टिक्स</string>
+    <string name="diagnostics_none">कोई क्रैश दर्ज नहीं।</string>
+    <plurals name="diagnostics_count">
+        <item quantity="one">इस फ़ोन पर %1$d क्रैश दर्ज है।</item>
+        <item quantity="other">इस फ़ोन पर %1$d क्रैश दर्ज हैं।</item>
+    </plurals>
+    <string name="diagnostics_send">डायग्नोस्टिक्स भेजें</string>
+    <string name="diagnostics_delete">क्रैश लॉग मिटाएँ</string>
+    <string name="diagnostics_explainer">अगर अभ्यास क्रैश हो, तो क्या गड़बड़ हुई यह इसी फ़ोन की एक फ़ाइल में लिखा जाता है, और कहीं नहीं। जब तक आप खुद पढ़कर ईमेल न करें, कुछ नहीं भेजा जाता।</string>
+    <string name="diagnostics_view_title">क्रैश लॉग</string>
+    <string name="diagnostics_view_hint">जो कुछ भेजा जाएगा वह यही है - गड़बड़ी और आपके फ़ोन का मॉडल, आपके कार्ड कभी नहीं। यह आपकी अपनी ईमेल ऐप से जाता है।</string>
+    <string name="diagnostics_send_email">ईमेल करें</string>
+    <string name="diagnostics_email_subject">अभ्यास %1$s क्रैश रिपोर्ट</string>
+    <string name="diagnostics_email_body">अभ्यास का क्रैश लॉग साथ में है। जब यह हुआ तब आप क्या कर रहे थे, यह बताने से मदद मिलेगी:</string>
+    <string name="msg_reminders_revoked">सूचना की अनुमति हटा दी गई, इसलिए रिमाइंडर बंद कर दिए गए।</string>
+    <string name="msg_exported">%1$s और %2$s निर्यात किए गए।</string>
+    <string name="msg_export_failed">बैकअप फ़ाइल लिखी नहीं जा सकी।</string>
+    <string name="msg_read_failed">वह फ़ाइल पढ़ी नहीं जा सकी।</string>
+    <string name="msg_restore_failed">वह बैकअप वापस नहीं लाया जा सका। कुछ भी नहीं बदला।</string>
+    <string name="msg_damaged">वह फ़ाइल खराब या अधूरी है, इसलिए कुछ वापस नहीं लाया गया। कोई दूसरी कॉपी आज़माइए।</string>
+    <string name="msg_not_a_backup">यह अभ्यास का बैकअप नहीं लगता।</string>
+    <string name="msg_restored">आपके मौजूदा संग्रह के साथ %1$s और %2$s वापस लाए गए।</string>
+    <string name="msg_diagnostics_deleted">क्रैश लॉग मिटा दिया गया।</string>
+
+    <string name="about_title">अभ्यास के बारे में</string>
+    <string name="about_version">संस्करण %1$s</string>
+    <string name="about_your_practice">आपका अभ्यास</string>
+    <string name="about_answers_ever">कुल जवाब</string>
+    <string name="about_this_week">इस हफ़्ते</string>
+    <string name="about_days_of_7">7 में से दिन</string>
+    <string name="about_privacy_title">आपके फ़ोन से कुछ बाहर नहीं जाता</string>
+    <string name="about_privacy_body">अभ्यास के पास इंटरनेट इस्तेमाल करने की अनुमति ही नहीं है। न सीमित, न किसी नीति में वादा - यह अनुमति ऐप से निकाल दी गई है, इसलिए ऑपरेटिंग सिस्टम इसे कोशिश करने पर भी कनेक्शन नहीं खोलने देगा। आपके पन्ने इसी फ़ोन पर पढ़े जाते हैं और कार्ड यहीं लिखे जाते हैं।</string>
+    <string name="about_privacy_cost">इसकी कीमत असली है और मंज़ूर है: न खाता, न सिंक। अगर अभ्यास क्रैश हो, तो उसका ब्योरा इसी फ़ोन के एक लॉग में रहता है, और हम तक तभी पहुँचता है जब आप सेटिंग्स से उसे भेजना चुनें।</string>
+    <string name="about_scheduling_title">समय-सारणी कैसे काम करती है</string>
+    <string name="about_scheduling_body">नया कार्ड एक मिनट बाद, फिर दस मिनट बाद लौटता है, जब तक आप उसे सच में याद न कर लें। उसके बाद हर सही जवाब पर अंतर बढ़ता है - एक दिन, फिर कुछ दिन, फिर हफ़्ते। कोई भूल जाएँ तो वह फिर मिनटों पर आ जाता है, पर उसका इतिहास बना रहता है।</string>
+    <string name="about_scheduling_honest">ईमानदारी से जवाब दीजिए। समय-सारणी तभी काम की है जब उसे पता हो कि आपको असल में क्या याद है।</string>
+    <string name="about_support">सहायता</string>
+    <string name="about_send_feedback">सुझाव भेजें</string>
+    <string name="about_feedback_subject">अभ्यास %1$s सुझाव</string>
+    <string name="about_whatsapp">WhatsApp</string>
+    <string name="about_coffee">एक कॉफ़ी पिलाएँ</string>
+    <string name="about_privacy_policy">गोपनीयता नीति</string>
+</resources>

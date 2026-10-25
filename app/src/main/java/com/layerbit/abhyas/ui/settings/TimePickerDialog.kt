@@ -34,6 +34,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.layerbit.abhyas.R
 import com.layerbit.abhyas.ui.theme.AbhyasColors
 
 /**
@@ -51,13 +54,15 @@ fun TimePickerDialog(
     onPick: (Int, Int) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val context = LocalContext.current
+    val minutesLabel = stringResource(R.string.a11y_minutes)
     var selectedHour by remember { mutableIntStateOf(hour) }
     var selectedMinute by remember { mutableIntStateOf(minute - minute % MINUTE_STEP) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = AbhyasColors.Surface,
-        title = { Text("Remind me at", fontWeight = FontWeight.Bold) },
+        title = { Text(stringResource(R.string.reminder_at), fontWeight = FontWeight.Bold) },
         text = {
             Row(
                 modifier = Modifier.fillMaxWidth().height(210.dp),
@@ -66,7 +71,7 @@ fun TimePickerDialog(
                 NumberColumn(
                     values = (0..23).toList(),
                     selected = selectedHour,
-                    format = ::formatHour,
+                    format = { formatHour(context, it) },
                     modifier = Modifier.weight(1f),
                     onSelect = { selectedHour = it }
                 )
@@ -78,14 +83,14 @@ fun TimePickerDialog(
                     // not, and two unlabelled columns of numbers are indistinguishable read aloud.
                     modifier = Modifier
                         .weight(1f)
-                        .semantics { contentDescription = "Minutes" },
+                        .semantics { contentDescription = minutesLabel },
                     onSelect = { selectedMinute = it }
                 )
             }
         },
         confirmButton = {
             Text(
-                text = "Set",
+                text = stringResource(R.string.action_set),
                 color = AbhyasColors.Saffron,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier
@@ -95,7 +100,7 @@ fun TimePickerDialog(
         },
         dismissButton = {
             Text(
-                text = "Cancel",
+                text = stringResource(R.string.action_cancel),
                 color = AbhyasColors.Muted,
                 modifier = Modifier.clickable(onClick = onDismiss).padding(12.dp)
             )
@@ -154,14 +159,11 @@ private fun NumberColumn(
     }
 }
 
-private fun formatHour(hour: Int): String {
-    val suffix = if (hour < 12) "am" else "pm"
-    val display = when {
-        hour == 0 -> 12
-        hour > 12 -> hour - 12
-        else -> hour
-    }
-    return "$display $suffix"
+/** One hour in the phone's own clock style and language: "7 pm", "19", "7 अपराह्न". */
+private fun formatHour(context: android.content.Context, hour: Int): String {
+    val at = java.util.Calendar.getInstance().apply { set(java.util.Calendar.HOUR_OF_DAY, hour) }
+    val pattern = if (android.text.format.DateFormat.is24HourFormat(context)) "HH" else "h a"
+    return java.text.SimpleDateFormat(pattern, java.util.Locale.getDefault()).format(at.time)
 }
 
 private const val MINUTE_STEP = 5

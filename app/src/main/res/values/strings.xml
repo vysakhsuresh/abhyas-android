@@ -1,4 +1,415 @@
-<resources>
-    <string name="app_name">Abhyas</string>
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Every word of the app's own chrome. Card text is never here: it is written in whatever script the
+  user's notes are in (see ScriptProfile), and only the buttons, labels and messages around it follow
+  the app's language. values-hi/strings.xml must carry every name below - a missing one silently falls
+  back to English, which reads as a half-translated app.
+-->
+<!-- PluralsCandidate is ignored deliberately: every count that changes form ("1 card", "2 cards")
+     is a <plurals>; what is left are labels like "%1$d due" whose words never inflect. -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="PluralsCandidate">
+    <string name="app_name" translatable="false">Abhyas</string>
     <string name="tagline">Your notes ask the questions.</string>
+
+    <!-- Common actions -->
+    <string name="action_back">Back</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_close">Close</string>
+    <string name="action_create">Create</string>
+    <string name="action_delete">Delete</string>
+    <string name="action_dismiss">Dismiss</string>
+    <string name="action_done">Done</string>
+    <string name="action_edit">Edit</string>
+    <string name="action_got_it">Got it</string>
+    <string name="action_rename">Rename</string>
+    <string name="action_save">Save</string>
+    <string name="action_set">Set</string>
+    <string name="action_back_to_deck">Back to deck</string>
+    <string name="action_try_another_page">Try another page</string>
+
+    <!-- Accessibility -->
+    <string name="a11y_edit_card">Edit this card</string>
+    <string name="a11y_delete_card">Delete this card</string>
+    <string name="a11y_keep_card">Keep this card</string>
+    <string name="a11y_undo">Take back the last answer</string>
+    <string name="a11y_listen">Read this side aloud</string>
+    <string name="a11y_minutes">Minutes</string>
+    <string name="a11y_put_back">Put this card back into the deck</string>
+    <string name="a11y_forecast_today">today %1$d</string>
+    <string name="a11y_forecast_tomorrow">tomorrow %1$d</string>
+    <string name="a11y_forecast_day">in %1$d days %2$d</string>
+    <string name="a11y_occlusion_surface">Picture. Drag to draw a mask over a label, tap a mask to select it. %1$d masks drawn.</string>
+
+    <!-- Labels for the data the app shows -->
+    <string name="grade_again">Again</string>
+    <string name="grade_hard">Hard</string>
+    <string name="grade_good">Good</string>
+    <string name="grade_easy">Easy</string>
+
+    <string name="kind_qa">Q&amp;A</string>
+    <string name="kind_definition">Definition</string>
+    <string name="kind_list">List</string>
+    <string name="kind_cloze">Fill in the blank</string>
+    <string name="kind_table">Table</string>
+
+    <string name="state_new">New</string>
+    <string name="state_learning">Learning</string>
+    <string name="state_review">Review</string>
+    <string name="state_relearning">Relearning</string>
+
+    <string name="script_latin">Latin</string>
+    <string name="script_devanagari">Devanagari</string>
+    <string name="script_chinese">Chinese</string>
+    <string name="script_japanese">Japanese</string>
+    <string name="script_korean">Korean</string>
+    <string name="script_latin_covers">English, Hindi in Roman, and most European languages</string>
+    <string name="script_devanagari_covers">Hindi, Marathi, Sanskrit, Nepali (and Latin)</string>
+    <string name="script_chinese_covers">Simplified and Traditional Chinese (and Latin)</string>
+    <string name="script_japanese_covers">Kanji, hiragana, katakana (and Latin)</string>
+    <string name="script_korean_covers">Hangul (and Latin)</string>
+    <string name="script_heading">SCRIPT</string>
+    <string name="script_dialog_title">Script</string>
+    <string name="script_dialog_hint">Which writing system are this deck\'s pages in? Every option except Latin also reads English, so a mixed textbook is fine.</string>
+
+    <string name="label_question">Question</string>
+    <string name="label_answer">Answer</string>
+    <string name="label_name">Name</string>
+    <string name="label_tags">Tags</string>
+    <string name="tags_placeholder">#chapter4 #exam</string>
+    <string name="from_your_notes">FROM YOUR NOTES</string>
+    <string name="set_aside">Set aside</string>
+    <string name="percent">%1$d%%</string>
+
+    <string name="count_due">%1$d due</string>
+    <string name="count_new">%1$d new</string>
+    <plurals name="count_cards">
+        <item quantity="one">%1$d card</item>
+        <item quantity="other">%1$d cards</item>
+    </plurals>
+    <plurals name="count_decks">
+        <item quantity="one">%1$d deck</item>
+        <item quantity="other">%1$d decks</item>
+    </plurals>
+    <plurals name="streak_days">
+        <item quantity="one">%1$d day streak</item>
+        <item quantity="other">%1$d day streak</item>
+    </plurals>
+
+    <!-- Decks list -->
+    <string name="nav_find">Find</string>
+    <string name="nav_insights">Insights</string>
+    <string name="nav_more">More</string>
+    <string name="decks_new">New deck</string>
+    <string name="decks_empty_title">No decks yet</string>
+    <string name="decks_empty_message">Make a deck for a subject or a chapter, then photograph a page of notes. Abhyas reads it and writes the cards.</string>
+    <string name="deck_up_to_date">Up to date</string>
+    <string name="new_deck_hint">A subject, a chapter, or whatever you are revising.</string>
+    <string name="new_deck_placeholder">Biology - Chapter 4</string>
+
+    <!-- First run -->
+    <string name="intro_title">Your notes, turned into flashcards</string>
+    <string name="intro_step_1">Make a deck for a subject or a chapter.</string>
+    <string name="intro_step_2">Photograph a page of your notes. Abhyas reads it on your phone and suggests the cards.</string>
+    <string name="intro_step_3">Study a few minutes a day. Each card comes back just before you would forget it.</string>
+    <string name="intro_example_from">From a page like this</string>
+    <string name="intro_example_source">Mitochondria: the organelle that releases energy from food, producing ATP.</string>
+    <string name="intro_example_front">What is mitochondria?</string>
+    <string name="intro_example_back">The organelle that releases energy from food, producing ATP.</string>
+    <string name="intro_start">Make my first deck</string>
+    <string name="intro_dismiss">I know how it works</string>
+
+    <!-- Deck -->
+    <string name="deck_merge">Merge</string>
+    <string name="deck_file_under">Move</string>
+    <string name="deck_rename">Rename deck</string>
+    <string name="deck_subdecks">SUBDECKS</string>
+    <string name="deck_add_subdeck">Add subdeck</string>
+    <string name="deck_all_cards">ALL CARDS</string>
+    <string name="deck_empty_title">This deck is empty</string>
+    <string name="deck_empty_message">Photograph a page of notes and Abhyas will suggest the cards.</string>
+    <string name="deck_includes_subdecks">Includes every subdeck</string>
+    <plurals name="deck_study">
+        <item quantity="one">Study %1$d card</item>
+        <item quantity="other">Study %1$d cards</item>
+    </plurals>
+    <string name="deck_add_from_page">Add cards from a page</string>
+    <string name="deck_add_image_cards">Add picture cards</string>
+    <string name="deck_reads_pages_in">Reads pages in</string>
+    <string name="deck_delete_title">Delete this deck?</string>
+    <plurals name="deck_delete_message">
+        <item quantity="one">Its %1$d card and everything you have learned about it go too. This cannot be undone.</item>
+        <item quantity="other">Its %1$d cards and everything you have learned about them go too. This cannot be undone.</item>
+    </plurals>
+    <string name="deck_delete_keeps_subdecks">Its subdecks are kept and move to the top level.</string>
+    <string name="deck_file_under_title">Move this deck into</string>
+    <string name="deck_file_under_hint">File it inside a subject - a chapter under its book. Its cards and schedules stay as they are.</string>
+    <string name="deck_file_under_blocked">This deck has subdecks of its own, so it cannot go inside another one. Decks are one level deep.</string>
+    <string name="deck_top_level">Top level (no parent)</string>
+    <string name="stat_due">DUE</string>
+    <string name="stat_new">NEW</string>
+    <string name="stat_total">TOTAL</string>
+    <string name="card_delete_title">Delete this card?</string>
+    <string name="card_delete_message">\"%1$s\" and everything you have learned about it go too. This cannot be undone.</string>
+    <string name="card_edit_title">Edit card</string>
+    <string name="card_image_row">%1$s · %2$s</string>
+    <string name="schedule_not_studied">Not studied yet</string>
+    <string name="schedule_learning">Being learned</string>
+    <string name="schedule_relearning">Forgotten once, being relearned</string>
+    <plurals name="schedule_every_days">
+        <item quantity="one">Every %1$d day</item>
+        <item quantity="other">Every %1$d days</item>
+    </plurals>
+    <plurals name="schedule_forgotten">
+        <item quantity="one">forgotten once</item>
+        <item quantity="other">forgotten %1$d times</item>
+    </plurals>
+    <string name="merge_title">Move cards into</string>
+    <string name="merge_message">Every card in \"%1$s\" moves to the deck you pick, keeping its schedule. \"%1$s\" is then deleted.</string>
+
+    <!-- Capture -->
+    <string name="capture_title">Photograph a page</string>
+    <string name="capture_subtitle">Fill the frame with the text. Good light helps.</string>
+    <string name="capture_choose_photo">Choose photo</string>
+    <string name="capture_choose_photos">Choose photos</string>
+    <string name="capture_take_photo">Take photo</string>
+    <string name="capture_camera_needed">Camera access is needed to photograph a page.\nYou can also pick an existing photo instead.</string>
+    <string name="capture_save_failed">That photo could not be saved. Check you have storage free, or pick an existing photo instead.</string>
+    <string name="capture_batch_label">Several pages</string>
+    <string name="capture_batch_hint">Keep shooting page after page, and review every suggestion at the end.</string>
+    <plurals name="capture_page_added">
+        <item quantity="one">Page %1$d read: %2$d suggestion</item>
+        <item quantity="other">Page %1$d read: %2$d suggestions</item>
+    </plurals>
+    <plurals name="capture_review_all">
+        <item quantity="one">Review %1$d suggestion</item>
+        <item quantity="other">Review %1$d suggestions</item>
+    </plurals>
+    <string name="capture_reading">Reading the page</string>
+    <string name="capture_reading_of">Reading page %1$d of %2$d</string>
+    <string name="capture_on_device">This happens on your phone. Nothing is uploaded.</string>
+    <string name="problem_title">Nothing to make cards from</string>
+    <string name="problem_unreadable">That photo could not be read. Try again.</string>
+    <string name="problem_no_text">No %1$s text found on that page. Hold steady, fill the frame, and check the deck is set to the right script.</string>
+    <string name="problem_nothing_card_shaped">The text came through, but nothing on this page turned into a good question. Pages of definitions, lists, tables and explanations work best.</string>
+    <string name="problem_already_in_deck">Everything on this page is already in the deck.</string>
+    <string name="saved_none">Nothing added</string>
+    <plurals name="saved_count">
+        <item quantity="one">%1$d card added</item>
+        <item quantity="other">%1$d cards added</item>
+    </plurals>
+    <string name="saved_none_detail">You kept none of the suggestions.</string>
+    <string name="saved_ready">They are ready to study now.</string>
+    <plurals name="review_title">
+        <item quantity="one">%1$d suggestion</item>
+        <item quantity="other">%1$d suggestions</item>
+    </plurals>
+    <string name="review_subtitle">Uncheck what you do not want. Tap any card to edit it.</string>
+    <plurals name="review_subtitle_pages">
+        <item quantity="one">From %1$d page. Uncheck what you do not want; tap a card to edit it.</item>
+        <item quantity="other">From %1$d pages. Uncheck what you do not want; tap a card to edit it.</item>
+    </plurals>
+    <string name="review_keep_all">Keep all</string>
+    <string name="review_drop_all">Drop all</string>
+    <string name="review_page">Page %1$d</string>
+    <string name="review_done_editing">Done editing</string>
+    <string name="review_tags_label">Tags for these cards (optional)</string>
+    <string name="review_nothing_selected">Nothing selected</string>
+    <plurals name="review_add">
+        <item quantity="one">Add %1$d card</item>
+        <item quantity="other">Add %1$d cards</item>
+    </plurals>
+    <string name="review_add_page">Photograph another page</string>
+
+    <!-- Picture (image occlusion) cards -->
+    <string name="occlusion_title">Photograph a diagram</string>
+    <string name="occlusion_subtitle">A labelled diagram, map or chart. You will hide its labels next.</string>
+    <string name="occlusion_retake">Use a different picture</string>
+    <string name="occlusion_edit_title">Hide the labels</string>
+    <string name="occlusion_edit_hint">Drag across each label to cover it. Every mask becomes one card.</string>
+    <string name="occlusion_detect">Find the labels for me</string>
+    <string name="occlusion_detecting">Looking for labels…</string>
+    <string name="occlusion_detected_none">No labels found. Draw them by hand.</string>
+    <plurals name="occlusion_detected">
+        <item quantity="one">%1$d label found</item>
+        <item quantity="other">%1$d labels found</item>
+    </plurals>
+    <string name="occlusion_hidden_label">Mask %1$d hides</string>
+    <string name="occlusion_hidden_label_plain">Hidden label</string>
+    <string name="occlusion_label_placeholder">What is under this mask?</string>
+    <string name="occlusion_remove">Remove this mask</string>
+    <string name="occlusion_card_title">Title</string>
+    <string name="occlusion_card_title_placeholder">Heart, front view</string>
+    <string name="occlusion_default_title">Diagram</string>
+    <string name="occlusion_label_n">Label %d</string>
+    <string name="occlusion_draw_first">Draw a mask first</string>
+
+    <!-- Study -->
+    <string name="study_undo">Undo</string>
+    <string name="study_left">%1$d left</string>
+    <string name="study_show_answer">Show answer</string>
+    <string name="study_listen">Listen</string>
+    <string name="study_cram_badge">Practice only - your schedule is not changed</string>
+    <string name="study_nothing_due">Nothing due</string>
+    <string name="study_done">Done</string>
+    <string name="study_nothing_waiting">This deck has nothing waiting for you right now.</string>
+    <plurals name="study_reviewed">
+        <item quantity="one">%1$d card reviewed.</item>
+        <item quantity="other">%1$d cards reviewed.</item>
+    </plurals>
+    <string name="study_next_review">Next review %1$s.</string>
+    <string name="cram_nothing_matches">No cards match this search.</string>
+    <string name="cram_schedule_untouched">Practice only: none of these answers changed when cards are due.</string>
+    <string name="tts_blank">blank</string>
+    <string name="leech_title">Set aside</string>
+    <plurals name="leech_message">
+        <item quantity="one">You have forgotten this one %1$d time. It is set aside - a card this sticky usually needs rewriting, not repeating.</item>
+        <item quantity="other">You have forgotten this one %1$d times. It is set aside - a card this sticky usually needs rewriting, not repeating.</item>
+    </plurals>
+    <string name="interval_less_than_minute">&lt;1m</string>
+    <string name="interval_minutes">%dm</string>
+    <string name="interval_hours">%dh</string>
+    <string name="interval_days">%dd</string>
+    <string name="interval_weeks">%dw</string>
+    <string name="interval_months">%dmo</string>
+    <string name="interval_years">%sy</string>
+    <string name="when_now">now</string>
+    <string name="when_under_a_minute">in under a minute</string>
+    <string name="when_tomorrow">tomorrow</string>
+    <plurals name="when_minutes">
+        <item quantity="one">in %1$d minute</item>
+        <item quantity="other">in %1$d minutes</item>
+    </plurals>
+    <plurals name="when_hours">
+        <item quantity="one">in %1$d hour</item>
+        <item quantity="other">in %1$d hours</item>
+    </plurals>
+    <plurals name="when_days">
+        <item quantity="one">in %1$d day</item>
+        <item quantity="other">in %1$d days</item>
+    </plurals>
+    <plurals name="when_months">
+        <item quantity="one">in %1$d month</item>
+        <item quantity="other">in %1$d months</item>
+    </plurals>
+
+    <!-- Search and cram -->
+    <string name="search_title">Find a card</string>
+    <string name="search_placeholder">A word from the card</string>
+    <string name="search_empty_title">Search every deck at once</string>
+    <string name="search_empty_message">It looks at the question, the answer, and the sentence the card was made from - which is often where the word you half-remember is. Tap a tag to see everything carrying it.</string>
+    <string name="search_none_title">Nothing matches</string>
+    <string name="search_none_message">No card in any deck contains \"%1$s\".</string>
+    <plurals name="cram_study">
+        <item quantity="one">Study this card now</item>
+        <item quantity="other">Study these %1$d cards now</item>
+    </plurals>
+    <string name="cram_hint">For an exam: goes through all of them whether due or not, and leaves your real schedule exactly as it was.</string>
+
+    <!-- Insights -->
+    <string name="insights_title">Insights</string>
+    <string name="insights_subtitle">How the schedule is actually doing.</string>
+    <string name="insights_recalled">RECALLED, LAST 30 DAYS</string>
+    <string name="insights_target" formatted="false">target 90%</string>
+    <string name="insights_retention_empty">Study a few cards and this fills in.</string>
+    <string name="insights_retention_high">Comfortably above target. The intervals could be longer - you are reviewing more than you need to.</string>
+    <string name="insights_retention_good">Right where it should be. The schedule is pitched correctly for you.</string>
+    <string name="insights_retention_low">Below target. Answer honestly rather than generously, and this corrects itself as the model learns which cards are hard for you.</string>
+    <string name="insights_where_cards_are">WHERE YOUR CARDS ARE</string>
+    <string name="insights_no_cards">No cards yet.</string>
+    <string name="maturity_unseen">Unseen</string>
+    <string name="maturity_learning">Learning</string>
+    <string name="maturity_young">Under 3 weeks</string>
+    <string name="maturity_mature">Sticking</string>
+    <string name="insights_forecast">DUE OVER THE NEXT TWO WEEKS</string>
+    <string name="insights_forecast_total">%1$d total</string>
+    <string name="insights_forecast_empty">Nothing due in the next two weeks.</string>
+    <string name="forecast_today">Today</string>
+    <string name="forecast_two_weeks">In 2 weeks</string>
+    <string name="busiest_today">Busiest day is today, %1$s.</string>
+    <string name="busiest_tomorrow">Busiest day is tomorrow, %1$s.</string>
+    <string name="busiest_in_days">Busiest day is in %1$d days, %2$s.</string>
+    <string name="fit_heading">YOUR SCHEDULE</string>
+    <string name="fit_explainer">Abhyas starts from a schedule fitted to millions of other people\'s reviews. Once you have a few hundred of your own, it can fit the schedule to how your memory actually behaves - on this phone, with nothing sent anywhere.</string>
+    <string name="fit_status_default">Using the standard schedule.</string>
+    <string name="fit_status_personal">Using a schedule fitted to you.</string>
+    <string name="fit_status_personal_gain">Using a schedule fitted to you - it predicted your recall %1$s%% better than the standard one.</string>
+    <string name="fit_running">Fitting to your reviews…</string>
+    <plurals name="fit_applied">
+        <item quantity="one">Done. Fitted to %2$d review, it predicts your recall %1$s%% better than the standard schedule on cards it had not seen. Now in use.</item>
+        <item quantity="other">Done. Fitted to %2$d reviews, it predicts your recall %1$s%% better than the standard schedule on cards it had not seen. Now in use.</item>
+    </plurals>
+    <plurals name="fit_no_gain">
+        <item quantity="one">Checked against %1$d review: a fitted schedule was no better than the standard one, so the standard one stays. Try again after more study.</item>
+        <item quantity="other">Checked against %1$d reviews: a fitted schedule was no better than the standard one, so the standard one stays. Try again after more study.</item>
+    </plurals>
+    <string name="fit_not_enough">Not enough history yet: %1$d answers so far, and it needs about %2$d spread over several days to fit honestly.</string>
+    <string name="fit_action">Re-fit schedule to me</string>
+    <string name="fit_reset">Go back to the standard schedule</string>
+    <string name="leech_card_explainer">You have forgotten these too many times to keep repeating them. A card this sticky is usually trying to hold too much at once - rewrite it as two simpler ones, or put it back if you disagree.</string>
+    <plurals name="forgotten_times">
+        <item quantity="one">forgotten %1$d time</item>
+        <item quantity="other">forgotten %1$d times</item>
+    </plurals>
+    <string name="leech_put_back">Put back</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="reminder_title">Daily reminder</string>
+    <string name="reminder_off_default">Off unless you turn it on.</string>
+    <string name="reminder_at">Remind me at</string>
+    <string name="reminder_explainer">The reminder stays quiet when there is nothing due, and when you have already studied that day. It never leaves your phone - there is no server involved and nothing is counted anywhere else.</string>
+    <string name="reminder_channel_description">A nudge when you have cards waiting.</string>
+    <plurals name="reminder_waiting">
+        <item quantity="one">%1$d card is waiting</item>
+        <item quantity="other">%1$d cards are waiting</item>
+    </plurals>
+    <string name="reminder_nudge">A few minutes now is worth an hour later.</string>
+    <string name="backup_title">Backup</string>
+    <string name="backup_explainer">Abhyas has no account and no sync, so this file is the only way your collection survives a lost phone. It carries your schedules and your pictures too, not just the words.</string>
+    <string name="backup_export">Export to a file</string>
+    <string name="backup_restore">Restore from a file</string>
+    <string name="backup_restore_note">Restoring adds to what you have rather than replacing it, so the wrong file costs you a few decks to delete instead of everything.</string>
+    <string name="diagnostics_title">Diagnostics</string>
+    <string name="diagnostics_none">No crashes recorded.</string>
+    <plurals name="diagnostics_count">
+        <item quantity="one">%1$d crash recorded on this phone.</item>
+        <item quantity="other">%1$d crashes recorded on this phone.</item>
+    </plurals>
+    <string name="diagnostics_send">Send diagnostics</string>
+    <string name="diagnostics_delete">Delete the crash log</string>
+    <string name="diagnostics_explainer">If Abhyas crashes, what went wrong is written to a file on this phone and nowhere else. Nothing is sent unless you read it and email it yourself.</string>
+    <string name="diagnostics_view_title">Crash log</string>
+    <string name="diagnostics_view_hint">This is everything that would be sent - the error and your phone model, never your cards. It goes through your own mail app.</string>
+    <string name="diagnostics_send_email">Email it</string>
+    <string name="diagnostics_email_subject">Abhyas %1$s crash report</string>
+    <string name="diagnostics_email_body">The crash log from Abhyas is attached. Anything you were doing when it happened helps:</string>
+    <string name="msg_reminders_revoked">Reminders were turned off because notification permission was revoked.</string>
+    <string name="msg_exported">Exported %1$s and %2$s.</string>
+    <string name="msg_export_failed">Could not write the backup file.</string>
+    <string name="msg_read_failed">Could not read that file.</string>
+    <string name="msg_restore_failed">That backup could not be restored. Nothing was changed.</string>
+    <string name="msg_damaged">That file is damaged or incomplete, so nothing was restored. Try another copy.</string>
+    <string name="msg_not_a_backup">That does not look like an Abhyas backup.</string>
+    <string name="msg_restored">Restored %1$s and %2$s alongside what you had.</string>
+    <string name="msg_diagnostics_deleted">The crash log is deleted.</string>
+
+    <!-- About -->
+    <string name="about_title">About Abhyas</string>
+    <string name="about_version">Version %1$s</string>
+    <string name="about_your_practice">YOUR PRACTICE</string>
+    <string name="about_answers_ever">ANSWERS EVER</string>
+    <string name="about_this_week">THIS WEEK</string>
+    <string name="about_days_of_7">DAYS OF 7</string>
+    <string name="about_privacy_title">Nothing leaves your phone</string>
+    <string name="about_privacy_body">Abhyas does not have permission to use the internet at all. Not restricted, not promised in a policy - the permission is stripped out of the app, so the operating system will not let it open a connection even if it tried. Your pages are read and your cards are written entirely on this device.</string>
+    <string name="about_privacy_cost">The cost of that is real and accepted: no accounts and no sync. If Abhyas crashes, the details stay in a log on this phone, and only reach us if you choose to send them from Settings.</string>
+    <string name="about_scheduling_title">How the scheduling works</string>
+    <string name="about_scheduling_body">A new card comes back after a minute, then ten, until you have actually recalled it. After that the gap grows each time you get it right - a day, then a few, then weeks. Forget one and it drops back to minutes, but keeps its history rather than starting over.</string>
+    <string name="about_scheduling_honest">Answer honestly. The schedule is only useful if it knows what you actually remember.</string>
+    <string name="about_support">Support</string>
+    <string name="about_send_feedback">Send feedback</string>
+    <string name="about_feedback_subject">Abhyas %1$s feedback</string>
+    <string name="about_whatsapp">WhatsApp</string>
+    <string name="about_coffee">Buy me a coffee</string>
+    <string name="about_privacy_policy">Privacy policy</string>
 </resources>

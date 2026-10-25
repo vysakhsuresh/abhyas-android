@@ -2,8 +2,6 @@ package com.layerbit.abhyas.ui.about
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,22 +13,24 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.layerbit.abhyas.BuildConfig
+import com.layerbit.abhyas.R
 import com.layerbit.abhyas.brand.BrandLinks
 import com.layerbit.abhyas.data.repo.AbhyasRepository
-import com.layerbit.abhyas.ui.components.screenPadding
 import com.layerbit.abhyas.ui.components.Card
 import com.layerbit.abhyas.ui.components.ScreenTitle
 import com.layerbit.abhyas.ui.components.SectionLabel
-import com.layerbit.abhyas.ui.components.TextLink
 import com.layerbit.abhyas.ui.components.StatRow
+import com.layerbit.abhyas.ui.components.TextLink
+import com.layerbit.abhyas.ui.components.screenPadding
 import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
 import kotlinx.coroutines.flow.SharingStarted
@@ -66,25 +66,25 @@ fun AboutScreen(onBack: () -> Unit) {
     ) {
         item {
             TextLink(
-                text = "Back",
+                text = stringResource(R.string.action_back),
                 color = AbhyasColors.Muted,
                 onClick = onBack,
                 fontSize = 14.sp
             )
             Spacer(Modifier.height(18.dp))
-            ScreenTitle("Abhyas", "Version ${BuildConfig.VERSION_NAME}")
+            ScreenTitle(stringResource(R.string.app_name), stringResource(R.string.about_version, BuildConfig.VERSION_NAME))
         }
 
         item {
             Card {
-                SectionLabel("YOUR PRACTICE", color = AbhyasColors.Dim, fontSize = 10.5.sp,
+                SectionLabel(stringResource(R.string.about_your_practice), color = AbhyasColors.Dim, fontSize = 10.5.sp,
                     fontWeight = FontWeight.Medium, letterSpacing = 1.2.sp)
                 Spacer(Modifier.height(14.dp))
                 StatRow(
                     listOf(
-                        total.toString() to "ANSWERS EVER",
-                        week.toString() to "THIS WEEK",
-                        days.size.toString() to "DAYS OF 7"
+                        total.toString() to stringResource(R.string.about_answers_ever),
+                        week.toString() to stringResource(R.string.about_this_week),
+                        days.size.toString() to stringResource(R.string.about_days_of_7)
                     )
                 )
             }
@@ -92,23 +92,17 @@ fun AboutScreen(onBack: () -> Unit) {
 
         item {
             Card {
-                Text("Nothing leaves your phone", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.about_privacy_title), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "Abhyas does not have permission to use the internet at all. Not " +
-                        "restricted, not promised in a policy - the permission is stripped out " +
-                        "of the app, so the operating system will not let it open a connection " +
-                        "even if it tried. Your pages are read and your cards are written " +
-                        "entirely on this device.",
+                    text = stringResource(R.string.about_privacy_body),
                     color = AbhyasColors.Muted,
                     fontSize = 13.5.sp,
                     lineHeight = 20.sp
                 )
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    text = "The cost of that is real and accepted: no accounts, no sync, no " +
-                        "crash reports. If something breaks, we only find out because you " +
-                        "tell us.",
+                    text = stringResource(R.string.about_privacy_cost),
                     color = AbhyasColors.Dim,
                     fontSize = 13.sp,
                     lineHeight = 19.sp
@@ -118,21 +112,17 @@ fun AboutScreen(onBack: () -> Unit) {
 
         item {
             Card {
-                Text("How the scheduling works", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.about_scheduling_title), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = "A new card comes back after a minute, then ten, until you have " +
-                        "actually recalled it. After that the gap grows each time you get it " +
-                        "right - a day, then a few, then weeks. Forget one and it drops back " +
-                        "to minutes, but keeps its history rather than starting over.",
+                    text = stringResource(R.string.about_scheduling_body),
                     color = AbhyasColors.Muted,
                     fontSize = 13.5.sp,
                     lineHeight = 20.sp
                 )
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    text = "Answer honestly. The schedule is only useful if it knows what you " +
-                        "actually remember.",
+                    text = stringResource(R.string.about_scheduling_honest),
                     color = AbhyasColors.Dim,
                     fontSize = 13.sp,
                     lineHeight = 19.sp
@@ -142,17 +132,17 @@ fun AboutScreen(onBack: () -> Unit) {
 
         item {
             Card {
-                SectionLabel("Support", fontSize = 16.sp)
+                SectionLabel(stringResource(R.string.about_support), fontSize = 16.sp)
                 Spacer(Modifier.height(12.dp))
-                LinkRow("Send feedback") {
-                    BrandLinks.sendEmail(
-                        context,
-                        subject = "Abhyas ${BuildConfig.VERSION_NAME} feedback",
-                        body = ""
-                    )
+                val subject = stringResource(R.string.about_feedback_subject, BuildConfig.VERSION_NAME)
+                LinkRow(stringResource(R.string.about_send_feedback)) {
+                    BrandLinks.sendEmail(context, subject = subject, body = "")
                 }
-                LinkRow("WhatsApp") { BrandLinks.openUrl(context, BrandLinks.WHATSAPP_URL) }
-                LinkRow("Buy me a coffee") { BrandLinks.openUrl(context, BrandLinks.COFFEE_URL) }
+                LinkRow(stringResource(R.string.about_whatsapp)) { BrandLinks.openUrl(context, BrandLinks.WHATSAPP_URL) }
+                LinkRow(stringResource(R.string.about_coffee)) { BrandLinks.openUrl(context, BrandLinks.COFFEE_URL) }
+                LinkRow(stringResource(R.string.about_privacy_policy)) {
+                    BrandLinks.openUrl(context, BrandLinks.PRIVACY_URL)
+                }
                 LinkRow(BrandLinks.BRAND_LABEL) {
                     BrandLinks.openUrl(context, BrandLinks.WEBSITE_URL)
                 }

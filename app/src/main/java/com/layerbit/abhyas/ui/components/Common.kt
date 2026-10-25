@@ -255,6 +255,72 @@ fun StatRow(stats: List<Pair<String, String>>, modifier: Modifier = Modifier) {
     }
 }
 
+/** The small upper-case caption above a field or a group: "QUESTION", "TAGS". */
+@Composable
+fun FieldLabel(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text = text.uppercase(),
+        color = AbhyasColors.Dim,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 1.sp,
+        modifier = modifier
+    )
+}
+
+/** The one text field style in the app, so every input looks like it belongs to the same screen. */
+@Composable
+fun AbhyasTextField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+    placeholder: String? = null,
+    singleLine: Boolean = false,
+    keyboardOptions: androidx.compose.foundation.text.KeyboardOptions =
+        androidx.compose.foundation.text.KeyboardOptions.Default,
+    keyboardActions: androidx.compose.foundation.text.KeyboardActions =
+        androidx.compose.foundation.text.KeyboardActions.Default
+) {
+    androidx.compose.material3.OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier.fillMaxWidth(),
+        singleLine = singleLine,
+        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp, color = AbhyasColors.Text),
+        placeholder = placeholder?.let { { Text(it, color = AbhyasColors.Dim) } },
+        keyboardOptions = keyboardOptions,
+        keyboardActions = keyboardActions,
+        colors = androidx.compose.material3.TextFieldDefaults.colors(
+            focusedContainerColor = AbhyasColors.SurfaceDim,
+            unfocusedContainerColor = AbhyasColors.SurfaceDim,
+            focusedIndicatorColor = AbhyasColors.Saffron,
+            unfocusedIndicatorColor = AbhyasColors.Border
+        )
+    )
+}
+
+/**
+ * A dialog's confirm or dismiss button: a text label with the padding inside the clickable, so the
+ * target is 48dp tall rather than one line of text.
+ */
+@Composable
+fun DialogAction(
+    text: String,
+    onClick: () -> Unit,
+    color: Color = AbhyasColors.Saffron,
+    enabled: Boolean = true,
+    emphasised: Boolean = true
+) {
+    Text(
+        text = text,
+        color = if (enabled) color else AbhyasColors.Dim,
+        fontWeight = if (emphasised) FontWeight.SemiBold else FontWeight.Normal,
+        modifier = Modifier
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(12.dp)
+    )
+}
+
 /**
  * The edge padding every screen uses.
  *

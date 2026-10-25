@@ -31,6 +31,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.layerbit.abhyas.data.ocr.ScriptOption
 import com.layerbit.abhyas.ui.theme.AbhyasColors
+import androidx.compose.ui.res.stringResource
+import com.layerbit.abhyas.R
+import com.layerbit.abhyas.ui.coversRes
+import com.layerbit.abhyas.ui.labelRes
 
 /**
  * Choosing which recogniser reads this deck's pages.
@@ -82,13 +86,13 @@ private fun ScriptRow(option: ScriptOption, selected: Boolean, onClick: () -> Un
         )
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                text = option.label,
+                text = stringResource(option.labelRes()),
                 color = if (selected) AbhyasColors.Text else AbhyasColors.Muted,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium
             )
             Spacer(Modifier.height(2.dp))
-            Text(option.covers, color = AbhyasColors.Dim, fontSize = 11.5.sp, lineHeight = 15.sp)
+            Text(stringResource(option.coversRes()), color = AbhyasColors.Dim, fontSize = 11.5.sp, lineHeight = 15.sp)
         }
 
         // A mark, not just a colour. `selectable` tells a screen reader which row is chosen, but
@@ -117,12 +121,11 @@ fun ScriptPickerDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = AbhyasColors.Surface,
-        title = { Text("Script", fontWeight = FontWeight.Bold) },
+        title = { Text(stringResource(R.string.script_dialog_title), fontWeight = FontWeight.Bold) },
         text = {
             Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    text = "Which writing system are this deck's pages in? Every option except " +
-                        "Latin also reads English, so a mixed textbook is fine.",
+                    text = stringResource(R.string.script_dialog_hint),
                     color = AbhyasColors.Muted,
                     fontSize = 13.5.sp,
                     lineHeight = 19.sp
@@ -139,7 +142,7 @@ fun ScriptPickerDialog(
         },
         confirmButton = {
             Text(
-                text = "Done",
+                text = stringResource(R.string.action_done),
                 color = AbhyasColors.Saffron,
                 fontWeight = FontWeight.SemiBold,
                 modifier = Modifier.clickable(onClick = onDismiss).padding(12.dp)

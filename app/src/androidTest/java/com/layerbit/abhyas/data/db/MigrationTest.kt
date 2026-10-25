@@ -186,11 +186,43 @@ class MigrationTest {
         }
     }
 
+
+    @Test
+    fun migratingFromThreeToFourKeepsEveryCardAndDefaultsTheNewColumns() {
+        helper.createDatabase(DATABASE_NAME, 3).use { db ->
+            seedDeck(db)
+            db.execSQL(
+                "INSERT INTO cards (id, deckId, front, back, sourceText, state, dueAt, intervalDays, " +
+                    "stability, difficulty, lastReviewedAt, easeFactor, repetitions, lapses, " +
+                    "learningStep, suspended, createdAt) VALUES " +
+                    "(1, 1, 'Q', 'A', 'src', 'REVIEW', 5000, 12, 12.0, 5.0, 4000, 2.5, 3, 0, 0, 0, 1000)"
+            )
+        }
+
+        migrateToLatest().use { db ->
+            db.query(
+                "SELECT type, tags, imagePath, occlusion, buriedUntil, stability FROM cards WHERE id = 1"
+            ).use {
+                it.moveToFirst()
+                assertEquals("an existing card is a text card", "BASIC", it.getString(0))
+                assertEquals("an existing card has no tags", "", it.getString(1))
+                assertTrue("an existing card has no picture", it.isNull(2))
+                assertTrue("an existing card has no masks", it.isNull(3))
+                assertEquals("an existing card is not buried", 0L, it.getLong(4))
+                assertEquals("its schedule is untouched", 12.0, it.getDouble(5), 0.0)
+            }
+            db.query("SELECT parentId FROM decks WHERE id = 1").use {
+                it.moveToFirst()
+                assertTrue("an existing deck is top-level", it.isNull(0))
+            }
+        }
+    }
+
     private companion object {
         const val DATABASE_NAME = "migration-test.db"
 
         /** Must track the version on AbhyasDatabase's @Database annotation. */
-        const val DATABASE_VERSION = 3
+        const val DATABASE_VERSION = 4
 
         const val DAY = 86_400_000L
     }

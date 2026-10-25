@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.layerbit.abhyas.data.db.CardEntity
 import com.layerbit.abhyas.data.model.CardState
 import com.layerbit.abhyas.data.model.Grade
+import com.layerbit.abhyas.data.ocr.ScriptOption
 import com.layerbit.abhyas.data.repo.AbhyasRepository
 import com.layerbit.abhyas.data.repo.AnsweredReview
 import com.layerbit.abhyas.data.srs.Scheduler
@@ -13,6 +14,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+
+/**
+ * What a cram session studies: every card matching a search term and/or a tag, due or not.
+ *
+ * "Exam on Thursday" mode. The real schedule is not touched - see [StudyViewModel.answer] - so
+ * revising everything the night before costs nothing the next day.
+ */
+data class CramFilter(val term: String = "", val tag: String = "")
 
 data class StudyState(
     val loading: Boolean = true,
@@ -37,18 +46,28 @@ data class StudyState(
      * A duration rather than `intervalDays`, because a card in learning is due again in minutes
      * and its interval in whole days is zero - which rendered three of the four buttons as an
      * identical, useless "0d" on exactly the reviews a new card spends most of its life in.
+     *
+     * Empty in a cram session, where the buttons schedule nothing.
      */
     val previews: Map<Grade, Long> = emptyMap(),
-    /** Set when an answer just suspended a card for being forgotten too often. */
-    val leechWarning: String? = null
+    /**
+     * Set to the card's lapse count when an answer just suspended it for being forgotten too
+     * often. A number rather than a sentence, so the screen can say it in the app's language.
+     */
+    val leechLapses: Int? = null,
+    /** The script of the card on screen, so it is read aloud in the right language. */
+    val script: ScriptOption = ScriptOption.DEFAULT,
+    /** Studying a filter ahead of an exam, with the schedule left alone. */
+    val cram: Boolean = false
 )
 
 class StudyViewModel(
     private val repository: AbhyasRepository,
-    private val deckId: Long
+    private val deckId: Long,
+    private val cramFilter: CramFilter? = null
 ) : ViewModel() {
 
-    private val _state = MutableStateFlow(StudyState())
+    private val _state = MutableStateFlow(StudyState(cram = cramFilter != null))
     val state: StateFlow<StudyState> = _state.asStateFlow()
 
     /**
@@ -64,6 +83,12 @@ class StudyViewModel(
     /** The last answer given, held so it can be taken back. One step only - see [undo]. */
     private var lastReview: AnsweredReview? = null
 
+    /** In a cram session there is no stored review to undo, just the card and where it was. */
+    private var lastCram: Pair<CardEntity, Int>? = null
+
+    /** Each deck's script, looked up once. A cram session spans decks. */
+    private val scripts = mutableMapOf<Long, ScriptOption>()
+
     /**
      * The in-flight answer or undo.
      *
@@ -78,7 +103,11 @@ class StudyViewModel(
 
     init {
         viewModelScope.launch {
-            queue += repository.buildQueue(deckId)
+            queue += if (cramFilter != null) {
+                repository.cramQueue(cramFilter.term, cramFilter.tag)
+            } else {
+                repository.buildQueue(deckId)
+            }
             advance()
         }
     }
@@ -95,10 +124,18 @@ class StudyViewModel(
         // guess, so the buttons are not live until the user has looked.
         if (!_state.value.answerShown) return
 
+        if (cramFilter != null) {
+            answerCram(current, grade)
+            return
+        }
+
         mutating = viewModelScope.launch {
             val review = repository.answer(current, grade)
             lastReview = review
             queue.remove(current)
+            // Its siblings were just held back until tomorrow in the database; they leave this
+            // sitting too, or the next card on screen would be the one whose answer was just shown.
+            if (review.buried.isNotEmpty()) queue.removeAll { it.id in review.buried }
 
             // Anything still on a minute-scale step belongs in this sitting. Re-inserted in due
             // order so the one-minute card comes back before the ten-minute one. A card just
@@ -117,13 +154,22 @@ class StudyViewModel(
             // that had not.
             advance(
                 answered = _state.value.answered + 1,
-                leechWarning = if (review.becameLeech) {
-                    "You have forgotten this one ${updated.lapses} times. It is set aside - " +
-                        "a card this sticky usually needs rewriting, not repeating."
-                } else {
-                    null
-                }
+                leechLapses = if (review.becameLeech) updated.lapses else null
             )
+        }
+    }
+
+    /**
+     * A cram answer: nothing is written, nothing is logged. A forgotten card comes back a few
+     * cards later in the same sitting, which is the only scheduling cramming needs.
+     */
+    private fun answerCram(current: CardEntity, grade: Grade) {
+        mutating = viewModelScope.launch {
+            val position = queue.indexOf(current)
+            queue.remove(current)
+            if (grade == Grade.AGAIN) queue.add(minOf(CRAM_RETRY_GAP, queue.size), current)
+            lastCram = current to position.coerceAtLeast(0)
+            advance(answered = _state.value.answered + 1, leechLapses = null)
         }
     }
 
@@ -136,6 +182,17 @@ class StudyViewModel(
      */
     fun undo() {
         if (mutating?.isActive == true) return
+
+        lastCram?.let { (card, _) ->
+            lastCram = null
+            mutating = viewModelScope.launch {
+                queue.removeAll { it.id == card.id }
+                queue.add(0, card)
+                advance(showAnswer = true, answered = (_state.value.answered - 1).coerceAtLeast(0), leechLapses = null)
+            }
+            return
+        }
+
         val review = lastReview ?: return
         lastReview = null
 
@@ -148,27 +205,28 @@ class StudyViewModel(
             advance(
                 showAnswer = true,
                 answered = (_state.value.answered - 1).coerceAtLeast(0),
-                leechWarning = null
+                leechLapses = null
             )
         }
     }
 
     fun dismissLeechWarning() {
-        _state.value = _state.value.copy(leechWarning = null)
+        _state.value = _state.value.copy(leechLapses = null)
     }
 
     /**
      * Publish the next card, or the end of the sitting.
      *
-     * [answered] and [leechWarning] are passed through rather than written by the caller beforehand,
+     * [answered] and [leechLapses] are passed through rather than written by the caller beforehand,
      * so that every action produces exactly one state change and no observer ever sees a half-moved
      * sitting.
      */
     private suspend fun advance(
         showAnswer: Boolean = false,
         answered: Int = _state.value.answered,
-        leechWarning: String? = _state.value.leechWarning
+        leechLapses: Int? = _state.value.leechLapses
     ) {
+        val canUndo = lastReview != null || lastCram != null
         val next = queue.firstOrNull()
         if (next == null) {
             _state.value = _state.value.copy(
@@ -177,11 +235,11 @@ class StudyViewModel(
                 answerShown = false,
                 remaining = 0,
                 finished = true,
-                canUndo = lastReview != null,
+                canUndo = canUndo,
                 previews = emptyMap(),
-                nextDueAt = repository.nextDueAt(deckId),
+                nextDueAt = if (cramFilter == null) repository.nextDueAt(deckId) else null,
                 answered = answered,
-                leechWarning = leechWarning
+                leechLapses = leechLapses
             )
             return
         }
@@ -191,25 +249,35 @@ class StudyViewModel(
             answerShown = showAnswer,
             remaining = queue.size,
             finished = false,
-            canUndo = lastReview != null,
-            previews = previewsFor(next),
+            canUndo = canUndo,
+            previews = if (cramFilter == null) previewsFor(next) else emptyMap(),
             answered = answered,
-            leechWarning = leechWarning
+            leechLapses = leechLapses,
+            script = scriptOf(next)
         )
     }
 
+    private suspend fun scriptOf(card: CardEntity): ScriptOption =
+        scripts.getOrPut(card.deckId) { repository.deckScript(card.deckId) }
+
     /**
-     * What each button would schedule for this card, in days.
+     * What each button would schedule for this card.
      *
-     * Computed by running the real scheduler four times rather than approximating, so what the
-     * button says is exactly what pressing it does. Cheap - FSRS is a handful of floating point
-     * operations and this runs once per card, not per frame.
+     * Computed by running the real scheduler four times, with the same weights the answer will
+     * use, rather than approximating - so what the button says is exactly what pressing it does.
+     * Cheap: FSRS is a handful of floating point operations and this runs once per card.
      */
     private fun previewsFor(card: CardEntity): Map<Grade, Long> {
         val now = System.currentTimeMillis()
         val scheduling = card.scheduling()
+        val weights = repository.currentWeights()
         return Grade.entries.associateWith { grade ->
-            (Scheduler.next(scheduling, grade, now).dueAt - now).coerceAtLeast(0L)
+            (Scheduler.next(scheduling, grade, now, weights = weights).dueAt - now).coerceAtLeast(0L)
         }
+    }
+
+    private companion object {
+        /** How many cards later a forgotten card returns in a cram session. */
+        const val CRAM_RETRY_GAP = 3
     }
 }

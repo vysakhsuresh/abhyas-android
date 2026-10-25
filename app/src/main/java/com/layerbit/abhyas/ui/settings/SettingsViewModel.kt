@@ -4,9 +4,11 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.layerbit.abhyas.data.backup.BackupCodec
+import com.layerbit.abhyas.data.diagnostics.CrashLog
 import com.layerbit.abhyas.data.reminder.ReminderPreferences
 import com.layerbit.abhyas.data.reminder.ReminderScheduler
 import com.layerbit.abhyas.data.repo.AbhyasRepository
+import java.io.OutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -16,12 +18,30 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+/**
+ * What Settings has to tell the user after an export, a restore or a revoked permission.
+ * Values rather than sentences, so the screen says them in the app's language.
+ */
+sealed interface SettingsMessage {
+    data object RemindersRevoked : SettingsMessage
+    data class Exported(val decks: Int, val cards: Int) : SettingsMessage
+    data object ExportFailed : SettingsMessage
+    data object ReadFailed : SettingsMessage
+    data object RestoreFailed : SettingsMessage
+    data object Damaged : SettingsMessage
+    data object NotABackup : SettingsMessage
+    data class Restored(val decks: Int, val cards: Int) : SettingsMessage
+    data object DiagnosticsDeleted : SettingsMessage
+}
+
 data class SettingsState(
     val remindersEnabled: Boolean = false,
     val hour: Int = 19,
     val minute: Int = 0,
     /** Set after an export, restore or failure, and cleared once the UI has shown it. */
-    val message: String? = null
+    val message: SettingsMessage? = null,
+    /** How many crashes the local log holds. Zero hides nothing - it says "none recorded". */
+    val crashCount: Int = 0
 )
 
 class SettingsViewModel(
@@ -39,6 +59,10 @@ class SettingsViewModel(
         )
     )
     val state: StateFlow<SettingsState> = _state.asStateFlow()
+
+    init {
+        refreshDiagnostics()
+    }
 
     /**
      * Turn reminders on or off.
@@ -78,8 +102,26 @@ class SettingsViewModel(
             ReminderScheduler.cancel(appContext)
             _state.value = _state.value.copy(
                 remindersEnabled = false,
-                message = "Reminders were turned off because notification permission was revoked."
+                message = SettingsMessage.RemindersRevoked
             )
+        }
+    }
+
+    // ---------------------------------------------------------------------------- diagnostics
+
+    fun refreshDiagnostics() {
+        viewModelScope.launch {
+            val count = withContext(Dispatchers.IO) { CrashLog.count(appContext) }
+            _state.value = _state.value.copy(crashCount = count)
+        }
+    }
+
+    suspend fun readDiagnostics(): String? = withContext(Dispatchers.IO) { CrashLog.read(appContext) }
+
+    fun deleteDiagnostics() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { CrashLog.clear(appContext) }
+            _state.value = _state.value.copy(crashCount = 0, message = SettingsMessage.DiagnosticsDeleted)
         }
     }
 
@@ -92,28 +134,37 @@ class SettingsViewModel(
      */
     private var busy: Job? = null
 
-    fun exportTo(write: (String) -> Boolean) {
+    /**
+     * Write the whole collection, pictures included, to the stream [open] returns.
+     *
+     * Streamed rather than built as one string: a collection with diagram cards carries every
+     * picture inside the file, and the string form of that is the one allocation in the app that
+     * could exhaust the heap.
+     */
+    fun exportTo(open: () -> OutputStream?) {
         if (busy?.isActive == true) return
         busy = viewModelScope.launch {
             val message = try {
                 val backup = repository.exportBackup()
+                val images = backup.cards.mapNotNull { it.imagePath }.distinct()
                 // Encoding and writing both move off the main thread. A thousand cards is a
-                // megabyte of JSON built by string concatenation and then pushed through a SAF
-                // stream that may be backed by cloud storage - on the main thread that is a frozen
-                // UI and, for a large collection, an ANR.
-                val ok = withContext(Dispatchers.IO) { write(BackupCodec.encode(backup)) }
-                if (ok) {
-                    "Exported ${count(backup.decks.size, "deck")} and ${count(backup.cards.size, "card")}."
-                } else {
-                    "Could not write the backup file."
+                // megabyte of JSON pushed through a SAF stream that may be backed by cloud storage
+                // - on the main thread that is a frozen UI and, for a large collection, an ANR.
+                val ok = withContext(Dispatchers.IO) {
+                    open()?.use { out ->
+                        BackupCodec.writeTo(out, backup, images) { repository.imageBytes(it) }
+                        true
+                    } ?: false
                 }
+                if (ok) SettingsMessage.Exported(backup.decks.size, backup.cards.size)
+                else SettingsMessage.ExportFailed
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Throwable) {
                 // Throwable: a full disk surfaces as an IOException, but encoding a very large
                 // collection can exhaust the heap, and an OutOfMemoryError escaping here would take
                 // the process down while the user watched a file dialog.
-                "Could not write the backup file."
+                SettingsMessage.ExportFailed
             }
             _state.value = _state.value.copy(message = message)
         }
@@ -125,7 +176,7 @@ class SettingsViewModel(
             val message = try {
                 val text = withContext(Dispatchers.IO) { read() }
                 when {
-                    text.isNullOrBlank() -> "Could not read that file."
+                    text.isNullOrBlank() -> SettingsMessage.ReadFailed
                     else -> restore(text)
                 }
             } catch (e: CancellationException) {
@@ -133,13 +184,13 @@ class SettingsViewModel(
             } catch (_: Throwable) {
                 // The restore itself is one transaction, so a failure part-way through has rolled
                 // back - which is what lets this promise the collection is untouched.
-                "That backup could not be restored. Nothing was changed."
+                SettingsMessage.RestoreFailed
             }
             _state.value = _state.value.copy(message = message)
         }
     }
 
-    private suspend fun restore(text: String): String {
+    private suspend fun restore(text: String): SettingsMessage {
         val backup = withContext(Dispatchers.IO) {
             runCatching { BackupCodec.decode(text) }.getOrNull()
         }
@@ -150,12 +201,11 @@ class SettingsViewModel(
             // another copy. A file that parses to nothing is the wrong file. Reporting both as
             // "that does not look like an Abhyas backup" sent people to look for a better file when
             // what they had was the right file, broken.
-            backup == null ->
-                "That file is damaged or incomplete, so nothing was restored. Try another copy."
-            backup.decks.isEmpty() -> "That does not look like an Abhyas backup."
+            backup == null -> SettingsMessage.Damaged
+            backup.decks.isEmpty() -> SettingsMessage.NotABackup
             else -> {
                 val (decks, cards) = repository.restoreBackup(backup)
-                "Restored ${count(decks, "deck")} and ${count(cards, "card")} alongside what you had."
+                SettingsMessage.Restored(decks, cards)
             }
         }
     }
@@ -164,6 +214,3 @@ class SettingsViewModel(
         _state.value = _state.value.copy(message = null)
     }
 }
-
-/** "1 deck", "3 decks" - the backup messages read as a sentence a person wrote. */
-private fun count(n: Int, noun: String): String = if (n == 1) "1 $noun" else "$n ${noun}s"

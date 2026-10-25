@@ -26,7 +26,10 @@ import com.layerbit.abhyas.ui.decks.DecksScreen
 import com.layerbit.abhyas.ui.insights.InsightsScreen
 import com.layerbit.abhyas.ui.search.SearchScreen
 import com.layerbit.abhyas.ui.settings.SettingsScreen
+import com.layerbit.abhyas.ui.study.CramFilter
 import com.layerbit.abhyas.ui.study.StudyScreen
+import com.layerbit.abhyas.ui.occlusion.OcclusionScreen
+import android.net.Uri
 import com.layerbit.abhyas.ui.theme.AbhyasColors
 
 object Routes {
@@ -38,10 +41,14 @@ object Routes {
     const val DECK = "deck/{deckId}"
     const val STUDY = "study/{deckId}"
     const val CAPTURE = "capture/{deckId}"
+    const val OCCLUSION = "occlusion/{deckId}"
+    const val CRAM = "cram?term={term}&tag={tag}"
 
     fun deck(id: Long) = "deck/$id"
     fun study(id: Long) = "study/$id"
     fun capture(id: Long) = "capture/$id"
+    fun occlusion(id: Long) = "occlusion/$id"
+    fun cram(term: String, tag: String) = "cram?term=${Uri.encode(term)}&tag=${Uri.encode(tag)}"
 }
 
 @Composable
@@ -69,6 +76,8 @@ fun AbhyasApp() {
                 deckId = deckId,
                 onStudy = { navController.navigate(Routes.study(deckId)) },
                 onAddCards = { navController.navigate(Routes.capture(deckId)) },
+                onAddImageCards = { navController.navigate(Routes.occlusion(deckId)) },
+                onOpenDeck = { navController.navigate(Routes.deck(it)) },
                 onBack = { entry.popFrom(navController) },
                 onDeleted = { entry.popFrom(navController) }
             )
@@ -82,6 +91,26 @@ fun AbhyasApp() {
         composable(Routes.CAPTURE, arguments = listOf(navArgument("deckId") { type = NavType.LongType })) { entry ->
             val deckId = entry.arguments?.getLong("deckId") ?: return@composable
             CaptureScreen(deckId = deckId, onDone = { entry.popFrom(navController) })
+        }
+
+        composable(Routes.OCCLUSION, arguments = listOf(navArgument("deckId") { type = NavType.LongType })) { entry ->
+            val deckId = entry.arguments?.getLong("deckId") ?: return@composable
+            OcclusionScreen(deckId = deckId, onDone = { entry.popFrom(navController) })
+        }
+
+        // Studying a search ahead of an exam. Not tied to a deck: a filter can span several.
+        composable(
+            Routes.CRAM,
+            arguments = listOf(
+                navArgument("term") { type = NavType.StringType; defaultValue = "" },
+                navArgument("tag") { type = NavType.StringType; defaultValue = "" }
+            )
+        ) { entry ->
+            val filter = CramFilter(
+                term = entry.arguments?.getString("term").orEmpty(),
+                tag = entry.arguments?.getString("tag").orEmpty()
+            )
+            StudyScreen(deckId = 0L, cram = filter, onDone = { entry.popFrom(navController) })
         }
 
         composable(Routes.ABOUT) { entry ->
@@ -100,7 +129,10 @@ fun AbhyasApp() {
         }
 
         composable(Routes.SEARCH) { entry ->
-            SearchScreen(onBack = { entry.popFrom(navController) })
+            SearchScreen(
+                onBack = { entry.popFrom(navController) },
+                onCram = { term, tag -> navController.navigate(Routes.cram(term, tag)) }
+            )
         }
     }
 }

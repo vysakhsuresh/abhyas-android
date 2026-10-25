@@ -30,6 +30,11 @@ android {
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // The app speaks English and Hindi. Compose, CameraX and ML Kit carry their own strings in
+        // dozens of languages, which would otherwise ship as dead weight and make the Play listing
+        // claim languages the app itself cannot speak.
+        resourceConfigurations += listOf("en", "hi")
     }
 
     // Room's MigrationTestHelper reads the exported schemas from the test APK's assets, so the

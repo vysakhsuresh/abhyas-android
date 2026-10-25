@@ -1,21 +1,41 @@
 package com.layerbit.abhyas
 
 import android.app.Application
+import com.layerbit.abhyas.data.diagnostics.CrashLog
 import com.layerbit.abhyas.data.reminder.ReminderPreferences
 import com.layerbit.abhyas.data.reminder.ReminderScheduler
 import com.layerbit.abhyas.data.repo.AbhyasRepository
+import com.layerbit.abhyas.data.srs.FsrsPreferences
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class AbhyasApplication : Application() {
+
+    /** The FSRS weights in force - the defaults, or the user's own fitted set. */
+    val fsrsPreferences: FsrsPreferences by lazy { FsrsPreferences(this) }
+
     /**
      * One repository for the process. Screens reach it through their ViewModel rather than
      * holding a reference, so nothing in the UI ever touches Room directly.
      */
-    val repository: AbhyasRepository by lazy { AbhyasRepository(this) }
+    val repository: AbhyasRepository by lazy {
+        AbhyasRepository(this) { fsrsPreferences.weights }
+    }
+
+    /** For housekeeping that must not hold up the first frame. */
+    private val background = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
+        // First, so a crash anywhere after this - including in the lines below - is recorded.
+        CrashLog.install(this)
         rearmReminder()
         sweepOrphanedPages()
+        // Pictures left behind by a card deleted while the process died, or by a restore that
+        // failed part-way. Off the main thread: it opens the database.
+        background.launch { runCatching { repository.sweepImages() } }
     }
 
     /**

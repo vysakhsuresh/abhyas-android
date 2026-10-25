@@ -20,6 +20,8 @@ object BrandLinks {
     const val COFFEE_URL = "https://www.buymeacoffee.com/layerbit"
     const val WHATSAPP_URL = "https://wa.me/916282595823"
     const val SUPPORT_EMAIL = "ceo@layerbit.co.in"
+    /** The public privacy policy, served from the repository's GitHub Pages site. */
+    const val PRIVACY_URL = "https://vysakhsuresh.github.io/abhyas-android/privacy/"
     const val PLAY_LISTING = "https://play.google.com/store/apps/details?id=com.layerbit.abhyas"
 
     fun openUrl(context: Context, url: String) {
@@ -31,11 +33,32 @@ object BrandLinks {
         }
     }
 
-    fun sendEmail(context: Context, subject: String, body: String) {
-        val intent = Intent(Intent.ACTION_SENDTO).apply {
-            data = Uri.parse("mailto:$SUPPORT_EMAIL")
-            putExtra(Intent.EXTRA_SUBJECT, subject)
-            putExtra(Intent.EXTRA_TEXT, body)
+    /**
+     * Open the user's mail app with a message to support, optionally carrying [attachment].
+     *
+     * With an attachment this has to be ACTION_SEND - ACTION_SENDTO is the mailto action and most
+     * mail apps ignore a stream on it - so the mailto intent goes on as the *selector*, which limits
+     * the chooser to apps that handle email rather than offering every app that can share a file.
+     * The read grant is what lets the mail app open a file that lives in Abhyas's private storage.
+     */
+    fun sendEmail(context: Context, subject: String, body: String, attachment: Uri? = null) {
+        val mailto = Intent(Intent.ACTION_SENDTO).apply { data = Uri.parse("mailto:") }
+        val intent = if (attachment == null) {
+            Intent(Intent.ACTION_SENDTO).apply {
+                data = Uri.parse("mailto:$SUPPORT_EMAIL")
+                putExtra(Intent.EXTRA_SUBJECT, subject)
+                putExtra(Intent.EXTRA_TEXT, body)
+            }
+        } else {
+            Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_EMAIL, arrayOf(SUPPORT_EMAIL))
+                putExtra(Intent.EXTRA_SUBJECT, subject)
+                putExtra(Intent.EXTRA_TEXT, body)
+                putExtra(Intent.EXTRA_STREAM, attachment)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                selector = mailto
+            }
         }
         try {
             context.startActivity(intent)

@@ -6,6 +6,7 @@ import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.layerbit.abhyas.data.model.CardState
+import com.layerbit.abhyas.data.model.CardType
 import com.layerbit.abhyas.data.srs.Scheduler
 import com.layerbit.abhyas.data.srs.Scheduling
 
@@ -69,8 +70,44 @@ data class CardEntity(
     /** Suspended cards stay in the deck and in the counts, but never enter the queue. */
     val suspended: Boolean = false,
 
-    val createdAt: Long
+    val createdAt: Long,
+
+    /** Text on both sides, or a masked picture. Decides how the study screen draws the card. */
+    @ColumnInfo(defaultValue = "BASIC")
+    val type: CardType = CardType.BASIC,
+
+    /**
+     * The user's tags, lower-cased and space-separated with no `#`: `"anatomy exam-1"`. See
+     * [Tags]. One column rather than a join table: a card carries a handful at most, every query
+     * that reads them already reads the card, and a filter is a single LIKE.
+     */
+    @ColumnInfo(defaultValue = "")
+    val tags: String = "",
+
+    /**
+     * For an [CardType.OCCLUSION] card, the file name of its picture inside the app's private
+     * image directory - never a path, so a backup restored on another phone still resolves.
+     */
+    val imagePath: String? = null,
+
+    /** For an [CardType.OCCLUSION] card, the masked regions as JSON. See `Occlusion`. */
+    val occlusion: String? = null,
+
+    /**
+     * Held back from the queue until this instant, because a sibling - a card made from the same
+     * sentence or the same picture - was answered today. Showing the second card straight after
+     * the first gives its answer away. Never touches the schedule itself.
+     */
+    @ColumnInfo(defaultValue = "0")
+    val buriedUntil: Long = 0L
 ) {
+    /**
+     * What makes two cards siblings: the sentence they were both made from, or the picture they
+     * both mask. Null for a card made by hand, which has no siblings.
+     */
+    val siblingKey: String?
+        get() = sourceText?.takeIf { it.isNotBlank() } ?: imagePath?.let { "image:$it" }
+
     /** Read the scheduling fields out as the value the [Scheduler] operates on. */
     fun scheduling(): Scheduling = Scheduling(
         id = id,

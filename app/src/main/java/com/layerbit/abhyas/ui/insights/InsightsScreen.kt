@@ -1,11 +1,9 @@
 package com.layerbit.abhyas.ui.insights
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -16,43 +14,51 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.layerbit.abhyas.AbhyasApplication
+import com.layerbit.abhyas.R
 import com.layerbit.abhyas.data.db.CardEntity
 import com.layerbit.abhyas.data.db.ForecastDay
 import com.layerbit.abhyas.data.db.Maturity
-import com.layerbit.abhyas.ui.components.screenPadding
 import com.layerbit.abhyas.ui.components.Card
-import com.layerbit.abhyas.ui.components.EmptyState
+import com.layerbit.abhyas.ui.components.PrimaryButton
 import com.layerbit.abhyas.ui.components.ScreenTitle
 import com.layerbit.abhyas.ui.components.SectionLabel
 import com.layerbit.abhyas.ui.components.TextLink
+import com.layerbit.abhyas.ui.components.screenPadding
 import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
 import kotlin.math.roundToInt
 
 @Composable
 fun InsightsScreen(onBack: () -> Unit) {
-    val viewModel = repositoryViewModel { InsightsViewModel(it) }
+    // The application's own preferences instance, not a new one: the repository reads the weights
+    // through it, and a second instance would cache its own copy and miss the re-fit.
+    val fsrs = (LocalContext.current.applicationContext as AbhyasApplication).fsrsPreferences
+    val viewModel = repositoryViewModel { InsightsViewModel(it, fsrs) }
 
     val retention by viewModel.retention.collectAsStateWithLifecycle()
     val maturity by viewModel.maturity.collectAsStateWithLifecycle()
     val forecast by viewModel.forecast.collectAsStateWithLifecycle()
     val leeches by viewModel.leeches.collectAsStateWithLifecycle()
     val streak by viewModel.streak.collectAsStateWithLifecycle()
+    val fit by viewModel.fit.collectAsStateWithLifecycle()
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -60,19 +66,31 @@ fun InsightsScreen(onBack: () -> Unit) {
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         item {
-            TextLink("Back", AbhyasColors.Muted, onBack)
+            TextLink(stringResource(R.string.action_back), AbhyasColors.Muted, onBack)
             Spacer(Modifier.height(4.dp))
-            ScreenTitle("Insights", "How the schedule is actually doing.")
+            ScreenTitle(stringResource(R.string.insights_title), stringResource(R.string.insights_subtitle))
         }
 
         item { RetentionTile(rate = retention, streak = streak) }
         item { MaturityCard(maturity) }
         item { ForecastCard(forecast) }
+        item { FitCard(fit, onRefit = viewModel::refit, onReset = viewModel::resetSchedule) }
 
         if (leeches.isNotEmpty()) {
             item { LeechCard(leeches, onUnsuspend = viewModel::unsuspend) }
         }
     }
+}
+
+@Composable
+private fun CardHeading(text: String) {
+    SectionLabel(
+        text,
+        color = AbhyasColors.Dim,
+        fontSize = 10.5.sp,
+        fontWeight = FontWeight.Medium,
+        letterSpacing = 1.2.sp
+    )
 }
 
 /**
@@ -85,17 +103,11 @@ fun InsightsScreen(onBack: () -> Unit) {
 @Composable
 private fun RetentionTile(rate: Float?, streak: Int) {
     Card {
-        SectionLabel(
-            "RECALLED, LAST 30 DAYS",
-            color = AbhyasColors.Dim,
-            fontSize = 10.5.sp,
-            fontWeight = FontWeight.Medium,
-            letterSpacing = 1.2.sp
-        )
+        CardHeading(stringResource(R.string.insights_recalled))
         Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.Bottom) {
             Text(
-                text = rate?.let { "${(it * 100).roundToInt()}%" } ?: "--",
+                text = rate?.let { stringResource(R.string.percent, (it * 100).roundToInt()) } ?: "--",
                 fontSize = 44.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = (-2).sp,
@@ -103,7 +115,7 @@ private fun RetentionTile(rate: Float?, streak: Int) {
             )
             Spacer(Modifier.width(12.dp))
             Text(
-                text = "target 90%",
+                text = stringResource(R.string.insights_target),
                 color = AbhyasColors.Dim,
                 fontSize = 13.sp,
                 modifier = Modifier.padding(bottom = 9.dp)
@@ -111,15 +123,14 @@ private fun RetentionTile(rate: Float?, streak: Int) {
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = when {
-                rate == null -> "Study a few cards and this fills in."
-                rate >= 0.93f -> "Comfortably above target. The intervals could be longer - " +
-                    "you are reviewing more than you need to."
-                rate >= 0.85f -> "Right where it should be. The schedule is pitched correctly " +
-                    "for you."
-                else -> "Below target. Answer honestly rather than generously, and this " +
-                    "corrects itself as the model learns which cards are hard for you."
-            },
+            text = stringResource(
+                when {
+                    rate == null -> R.string.insights_retention_empty
+                    rate >= 0.93f -> R.string.insights_retention_high
+                    rate >= 0.85f -> R.string.insights_retention_good
+                    else -> R.string.insights_retention_low
+                }
+            ),
             color = AbhyasColors.Muted,
             fontSize = 13.sp,
             lineHeight = 19.sp
@@ -127,7 +138,7 @@ private fun RetentionTile(rate: Float?, streak: Int) {
         if (streak > 0) {
             Spacer(Modifier.height(12.dp))
             Text(
-                text = if (streak == 1) "1 day streak" else "$streak day streak",
+                text = pluralStringResource(R.plurals.streak_days, streak, streak),
                 color = AbhyasColors.SaffronBright,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium
@@ -146,25 +157,19 @@ private fun RetentionTile(rate: Float?, streak: Int) {
 @Composable
 private fun MaturityCard(maturity: Maturity?) {
     val segments = listOf(
-        Triple("Unseen", maturity?.unseen ?: 0, AbhyasColors.Unseen),
-        Triple("Learning", maturity?.learning ?: 0, AbhyasColors.Learning),
-        Triple("Under 3 weeks", maturity?.young ?: 0, AbhyasColors.Young),
-        Triple("Sticking", maturity?.mature ?: 0, AbhyasColors.Mature)
+        Triple(stringResource(R.string.maturity_unseen), maturity?.unseen ?: 0, AbhyasColors.Unseen),
+        Triple(stringResource(R.string.maturity_learning), maturity?.learning ?: 0, AbhyasColors.Learning),
+        Triple(stringResource(R.string.maturity_young), maturity?.young ?: 0, AbhyasColors.Young),
+        Triple(stringResource(R.string.maturity_mature), maturity?.mature ?: 0, AbhyasColors.Mature)
     )
     val total = segments.sumOf { it.second }
 
     Card {
-        SectionLabel(
-            "WHERE YOUR CARDS ARE",
-            color = AbhyasColors.Dim,
-            fontSize = 10.5.sp,
-            fontWeight = FontWeight.Medium,
-            letterSpacing = 1.2.sp
-        )
+        CardHeading(stringResource(R.string.insights_where_cards_are))
         Spacer(Modifier.height(14.dp))
 
         if (total == 0) {
-            Text("No cards yet.", color = AbhyasColors.Muted, fontSize = 14.sp)
+            Text(stringResource(R.string.insights_no_cards), color = AbhyasColors.Muted, fontSize = 14.sp)
             return@Card
         }
 
@@ -230,15 +235,9 @@ private fun ForecastCard(forecast: List<ForecastDay>) {
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            SectionLabel(
-                "DUE OVER THE NEXT TWO WEEKS",
-                color = AbhyasColors.Dim,
-                fontSize = 10.5.sp,
-                fontWeight = FontWeight.Medium,
-                letterSpacing = 1.2.sp
-            )
+            CardHeading(stringResource(R.string.insights_forecast))
             Text(
-                text = "${days.sum()} total",
+                text = stringResource(R.string.insights_forecast_total, days.sum()),
                 color = AbhyasColors.Dim,
                 fontSize = 11.sp
             )
@@ -246,33 +245,27 @@ private fun ForecastCard(forecast: List<ForecastDay>) {
         Spacer(Modifier.height(16.dp))
 
         if (peak == 0) {
-            Text(
-                "Nothing due in the next two weeks.",
-                color = AbhyasColors.Muted,
-                fontSize = 14.sp
-            )
+            Text(stringResource(R.string.insights_forecast_empty), color = AbhyasColors.Muted, fontSize = 14.sp)
             return@Card
         }
+
+        // The bars are Boxes with a background and a height, so they emit no semantics at all -
+        // the chart was simply absent to a screen reader, apart from the single number over the
+        // busiest bar. Reading the fourteen days out as one node is the whole chart, in order, in
+        // the only form that survives being spoken.
+        val spoken = days.mapIndexed { index, count ->
+            when (index) {
+                0 -> stringResource(R.string.a11y_forecast_today, count)
+                1 -> stringResource(R.string.a11y_forecast_tomorrow, count)
+                else -> stringResource(R.string.a11y_forecast_day, index, count)
+            }
+        }.joinToString(", ")
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(96.dp)
-                // The bars are Boxes with a background and a height, so they emit no semantics at
-                // all - the chart was simply absent to a screen reader, apart from the single number
-                // over the busiest bar. Reading the fourteen days out as one node is the whole
-                // chart, in order, in the only form that survives being spoken.
-                .semantics(mergeDescendants = true) {
-                    contentDescription = days
-                        .mapIndexed { index, count ->
-                            when (index) {
-                                0 -> "today $count"
-                                1 -> "tomorrow $count"
-                                else -> "in $index days $count"
-                            }
-                        }
-                        .joinToString(", ")
-                },
+                .semantics(mergeDescendants = true) { contentDescription = spoken },
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.Bottom
         ) {
@@ -288,34 +281,31 @@ private fun ForecastCard(forecast: List<ForecastDay>) {
         }
         Spacer(Modifier.height(8.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Today", color = AbhyasColors.Dim, fontSize = 11.sp)
-            Text("In 2 weeks", color = AbhyasColors.Dim, fontSize = 11.sp)
+            Text(stringResource(R.string.forecast_today), color = AbhyasColors.Dim, fontSize = 11.sp)
+            Text(stringResource(R.string.forecast_two_weeks), color = AbhyasColors.Dim, fontSize = 11.sp)
         }
 
         // The shape of the chart in a sentence. Written for the screen reader and kept for everyone:
         // "your heaviest day is Thursday" is the thing a student actually wants off this card, and
         // reading it off fourteen bars is work even with good eyesight.
         Spacer(Modifier.height(12.dp))
-        Text(
-            text = busiestDay(days),
-            color = AbhyasColors.Muted,
-            fontSize = 13.sp
-        )
+        Text(text = busiestDay(days), color = AbhyasColors.Muted, fontSize = 13.sp)
     }
 }
 
 /** The forecast's one useful sentence: when the heaviest day falls, and how heavy. */
+@Composable
 private fun busiestDay(days: List<Int>): String {
     val peak = days.maxOrNull() ?: 0
     // "scheduled" would be a lie: a card put away for a month is scheduled, it is just not in
     // this window, and the card above counts exactly fourteen days.
-    if (peak == 0) return "Nothing due in the next two weeks."
+    if (peak == 0) return stringResource(R.string.insights_forecast_empty)
 
-    val cards = if (peak == 1) "1 card" else "$peak cards"
+    val cards = pluralStringResource(R.plurals.count_cards, peak, peak)
     return when (val index = days.indexOf(peak)) {
-        0 -> "Busiest day is today, $cards."
-        1 -> "Busiest day is tomorrow, $cards."
-        else -> "Busiest day is in $index days, $cards."
+        0 -> stringResource(R.string.busiest_today, cards)
+        1 -> stringResource(R.string.busiest_tomorrow, cards)
+        else -> stringResource(R.string.busiest_in_days, index, cards)
     }
 }
 
@@ -357,21 +347,64 @@ private fun ForecastBar(
     }
 }
 
+/**
+ * Fitting the schedule to this user.
+ *
+ * Says what it will do before it does it, and afterwards says what it measured - including when
+ * the honest answer is "no better than the defaults", which is the common case for a newer user.
+ */
+@Composable
+private fun FitCard(state: FitState, onRefit: () -> Unit, onReset: () -> Unit) {
+    Card {
+        CardHeading(stringResource(R.string.fit_heading))
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.fit_explainer),
+            color = AbhyasColors.Muted,
+            fontSize = 13.sp,
+            lineHeight = 19.sp
+        )
+        Spacer(Modifier.height(12.dp))
+
+        val (message, color) = when (state) {
+            is FitState.Idle -> if (state.personal) {
+                val gain = state.lastImprovement
+                (if (gain != null) stringResource(R.string.fit_status_personal_gain, "%.1f".format(gain))
+                else stringResource(R.string.fit_status_personal)) to AbhyasColors.Good
+            } else {
+                stringResource(R.string.fit_status_default) to AbhyasColors.Dim
+            }
+            FitState.Running -> stringResource(R.string.fit_running) to AbhyasColors.Muted
+            is FitState.Applied -> pluralStringResource(
+                R.plurals.fit_applied, state.reviews, "%.1f".format(state.improvementPercent), state.reviews
+            ) to AbhyasColors.Good
+            is FitState.NoGain -> pluralStringResource(R.plurals.fit_no_gain, state.reviews, state.reviews) to
+                AbhyasColors.Muted
+            is FitState.NotEnough -> stringResource(R.string.fit_not_enough, state.have, state.need) to
+                AbhyasColors.Muted
+        }
+        Text(message, color = color, fontSize = 13.sp, lineHeight = 19.sp)
+        Spacer(Modifier.height(12.dp))
+
+        if (state == FitState.Running) {
+            CircularProgressIndicator(color = AbhyasColors.Saffron, modifier = Modifier.size(26.dp))
+        } else {
+            PrimaryButton(stringResource(R.string.fit_action), onClick = onRefit)
+            val personal = (state is FitState.Idle && state.personal) || state is FitState.Applied
+            if (personal) {
+                TextLink(stringResource(R.string.fit_reset), AbhyasColors.Muted, onReset, fontSize = 13.sp)
+            }
+        }
+    }
+}
+
 @Composable
 private fun LeechCard(leeches: List<CardEntity>, onUnsuspend: (CardEntity) -> Unit) {
     Card {
-        SectionLabel(
-            "SET ASIDE",
-            color = AbhyasColors.Dim,
-            fontSize = 10.5.sp,
-            fontWeight = FontWeight.Medium,
-            letterSpacing = 1.2.sp
-        )
+        CardHeading(stringResource(R.string.set_aside).uppercase())
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "You have forgotten these too many times to keep repeating them. A card this " +
-                "sticky is usually trying to hold too much at once - rewrite it as two simpler " +
-                "ones, or put it back if you disagree.",
+            text = stringResource(R.string.leech_card_explainer),
             color = AbhyasColors.Muted,
             fontSize = 13.sp,
             lineHeight = 19.sp
@@ -383,17 +416,17 @@ private fun LeechCard(leeches: List<CardEntity>, onUnsuspend: (CardEntity) -> Un
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "forgotten ${card.lapses} times",
+                        text = pluralStringResource(R.plurals.forgotten_times, card.lapses, card.lapses),
                         color = AbhyasColors.Again,
                         fontSize = 12.sp,
                         modifier = Modifier.weight(1f)
                     )
                     TextLink(
-                        text = "Put back",
+                        text = stringResource(R.string.leech_put_back),
                         color = AbhyasColors.Saffron,
                         onClick = { onUnsuspend(card) },
                         fontSize = 12.5.sp,
-                        onClickLabel = "Put this card back into the deck"
+                        onClickLabel = stringResource(R.string.a11y_put_back)
                     )
                 }
             }

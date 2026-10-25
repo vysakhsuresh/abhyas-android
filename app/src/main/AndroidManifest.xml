@@ -45,16 +45,38 @@
       needs no storage permission at all, so Abhyas never asks for access to the gallery.
     -->
 
+    <!--
+      Text-to-speech. Android 11+ hides other apps' services unless the manifest says which kind it
+      looks for, and without this TextToSpeech binds to nothing and fails silently. It is a query,
+      not a permission: Abhyas still cannot reach the network, and only offline voices are used.
+    -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
+    <!--
+      enableOnBackInvokedCallback: predictive back. The system animates the swipe and shows where it
+      leads before it commits; Android 15+ expects it, and Compose's navigation already handles back
+      through OnBackPressedDispatcher, which is what the flag routes the gesture to.
+
+      localeConfig: lets Android 13+ offer the app in Hindi from system settings, independently of
+      the phone's own language - a student whose phone is in English can still choose a Hindi app.
+    -->
     <application
         android:name=".AbhyasApplication"
         android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
+        android:enableOnBackInvokedCallback="true"
         android:fullBackupContent="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
+        android:localeConfig="@xml/locales_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Abhyas">
+        android:theme="@style/Theme.Abhyas"
+        tools:targetApi="33">
 
         <activity
             android:name=".MainActivity"
@@ -82,6 +104,20 @@
                 <action android:name="android.intent.action.TIME_SET" />
             </intent-filter>
         </receiver>
+
+        <!--
+            Hands the crash log to the user's mail app, and nothing else: the paths file exposes the
+            one log file, read-only, and only for the duration of the grant on that one email.
+        -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.diagnostics"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/diagnostics_paths" />
+        </provider>
 
     </application>
 

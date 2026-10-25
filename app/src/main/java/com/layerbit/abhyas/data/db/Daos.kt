@@ -16,10 +16,16 @@ data class DeckSummary(
     val name: String,
     val lastUsedAt: Long,
     val script: ScriptOption,
+    /** The deck this one sits inside, or null at the top level. See [DeckEntity.parentId]. */
+    val parentId: Long?,
+    /** Counts include every subdeck's cards, so a subject shows the work in all its chapters. */
     val total: Int,
     val due: Int,
     val newCount: Int
 )
+
+/** A deck that could hold another as a subdeck. */
+data class ParentOption(val id: Long, val name: String)
 
 /** A deck as the merge dialog needs it: what to call it, and how much is in it. */
 data class MergeTarget(
@@ -49,6 +55,48 @@ interface DeckDao {
     @Query("UPDATE decks SET lastUsedAt = :at WHERE id = :id")
     suspend fun touch(id: Long, at: Long)
 
+    /** This deck and its subdecks: what studying it, or counting it, covers. */
+    @Query("SELECT id FROM decks WHERE id = :deckId OR parentId = :deckId")
+    suspend fun selfAndChildren(deckId: Long): List<Long>
+
+    /** Lift a deleted deck's subdecks to the top level rather than orphaning them. */
+    @Query("UPDATE decks SET parentId = NULL WHERE parentId = :deckId")
+    suspend fun releaseChildren(deckId: Long)
+
+    @Query("UPDATE decks SET parentId = :parentId WHERE id = :deckId")
+    suspend fun setParent(deckId: Long, parentId: Long?)
+
+    /**
+     * Decks this one could be filed under: top-level, not itself, and only if this deck has no
+     * subdecks of its own - which is what keeps the tree one level deep.
+     */
+    @Query(
+        """
+        SELECT id, name FROM decks
+         WHERE parentId IS NULL AND id != :deckId
+           AND NOT EXISTS (SELECT 1 FROM decks c WHERE c.parentId = :deckId)
+         ORDER BY name COLLATE NOCASE
+        """
+    )
+    suspend fun parentOptions(deckId: Long): List<ParentOption>
+
+    /** The subdecks of one deck, with their own counts, for the deck screen. */
+    @Query(
+        """
+        SELECT d.id, d.name, d.lastUsedAt, d.script, d.parentId,
+               (SELECT COUNT(*) FROM cards c WHERE c.deckId = d.id) AS total,
+               (SELECT COUNT(*) FROM cards c
+                 WHERE c.deckId = d.id AND c.suspended = 0 AND c.buriedUntil <= :now
+                   AND c.state != 'NEW' AND c.dueAt <= :now) AS due,
+               (SELECT COUNT(*) FROM cards c
+                 WHERE c.deckId = d.id AND c.suspended = 0 AND c.buriedUntil <= :now
+                   AND c.state = 'NEW') AS newCount
+        FROM decks d WHERE d.parentId = :deckId
+        ORDER BY d.name COLLATE NOCASE
+        """
+    )
+    fun children(deckId: Long, now: Long): Flow<List<DeckSummary>>
+
     /**
      * Every deck with its counts in one query.
      *
@@ -56,16 +104,24 @@ interface DeckDao {
      * and counting in Kotlin, because this drives the home screen and has to stay cheap as a
      * collection grows into the thousands. `newCount` is reported separately from `due` because a
      * pile of unseen cards and a pile of overdue ones mean very different things to a student.
+     *
+     * Each deck's counts cover its subdecks too. The tree is one level deep, so "this deck or a deck
+     * whose parent is this one" is the whole subtree, without a recursive query. Buried cards are
+     * left out, because the study queue leaves them out and the number on the button has to match.
      */
     @Query(
         """
-        SELECT d.id, d.name, d.lastUsedAt, d.script,
-               (SELECT COUNT(*) FROM cards c WHERE c.deckId = d.id) AS total,
+        SELECT d.id, d.name, d.lastUsedAt, d.script, d.parentId,
                (SELECT COUNT(*) FROM cards c
-                 WHERE c.deckId = d.id AND c.suspended = 0
+                 WHERE c.deckId IN (SELECT s.id FROM decks s WHERE s.id = d.id OR s.parentId = d.id)
+               ) AS total,
+               (SELECT COUNT(*) FROM cards c
+                 WHERE c.deckId IN (SELECT s.id FROM decks s WHERE s.id = d.id OR s.parentId = d.id)
+                   AND c.suspended = 0 AND c.buriedUntil <= :now
                    AND c.state != 'NEW' AND c.dueAt <= :now) AS due,
                (SELECT COUNT(*) FROM cards c
-                 WHERE c.deckId = d.id AND c.suspended = 0
+                 WHERE c.deckId IN (SELECT s.id FROM decks s WHERE s.id = d.id OR s.parentId = d.id)
+                   AND c.suspended = 0 AND c.buriedUntil <= :now
                    AND c.state = 'NEW') AS newCount
         FROM decks d
         ORDER BY d.lastUsedAt DESC
@@ -102,13 +158,17 @@ interface DeckDao {
 
     @Query(
         """
-        SELECT d.id, d.name, d.lastUsedAt, d.script,
-               (SELECT COUNT(*) FROM cards c WHERE c.deckId = d.id) AS total,
+        SELECT d.id, d.name, d.lastUsedAt, d.script, d.parentId,
                (SELECT COUNT(*) FROM cards c
-                 WHERE c.deckId = d.id AND c.suspended = 0
+                 WHERE c.deckId IN (SELECT s.id FROM decks s WHERE s.id = d.id OR s.parentId = d.id)
+               ) AS total,
+               (SELECT COUNT(*) FROM cards c
+                 WHERE c.deckId IN (SELECT s.id FROM decks s WHERE s.id = d.id OR s.parentId = d.id)
+                   AND c.suspended = 0 AND c.buriedUntil <= :now
                    AND c.state != 'NEW' AND c.dueAt <= :now) AS due,
                (SELECT COUNT(*) FROM cards c
-                 WHERE c.deckId = d.id AND c.suspended = 0
+                 WHERE c.deckId IN (SELECT s.id FROM decks s WHERE s.id = d.id OR s.parentId = d.id)
+                   AND c.suspended = 0 AND c.buriedUntil <= :now
                    AND c.state = 'NEW') AS newCount
         FROM decks d WHERE d.id = :deckId
         """
@@ -145,29 +205,32 @@ interface CardDao {
      * because introducing new material before clearing what is already half-learned is how people
      * end up with a backlog they never dig out of.
      *
-     * NEW cards are included regardless of `dueAt` (which is 0 for them) but capped by
-     * [newLimit], so a freshly imported 200-card chapter does not bury the day's reviews.
+     * NEW cards come from [newCards], capped, so a freshly imported 200-card chapter does not bury
+     * the day's reviews.
+     *
+     * Takes the deck *and its subdecks*, so studying a subject studies every chapter in it. Buried
+     * cards wait for tomorrow; see [CardEntity.buriedUntil].
      */
     @Query(
         """
         SELECT * FROM cards
-         WHERE deckId = :deckId AND suspended = 0
+         WHERE deckId IN (:deckIds) AND suspended = 0 AND buriedUntil <= :now
            AND (state != 'NEW' AND dueAt <= :now)
          ORDER BY CASE state WHEN 'LEARNING' THEN 0 WHEN 'RELEARNING' THEN 0 ELSE 1 END,
                   dueAt ASC
         """
     )
-    suspend fun dueNow(deckId: Long, now: Long): List<CardEntity>
+    suspend fun dueNow(deckIds: List<Long>, now: Long): List<CardEntity>
 
     @Query(
         """
         SELECT * FROM cards
-         WHERE deckId = :deckId AND suspended = 0 AND state = 'NEW'
-         ORDER BY createdAt ASC
+         WHERE deckId IN (:deckIds) AND suspended = 0 AND buriedUntil <= :now AND state = 'NEW'
+         ORDER BY createdAt ASC, id ASC
          LIMIT :newLimit
         """
     )
-    suspend fun newCards(deckId: Long, newLimit: Int): List<CardEntity>
+    suspend fun newCards(deckIds: List<Long>, now: Long, newLimit: Int): List<CardEntity>
 
     /**
      * The soonest a card in this deck comes back, used to tell the user *when* to return rather
@@ -176,11 +239,11 @@ interface CardDao {
      */
     @Query(
         """
-        SELECT MIN(dueAt) FROM cards
-         WHERE deckId = :deckId AND suspended = 0 AND state != 'NEW'
+        SELECT MIN(MAX(dueAt, buriedUntil)) FROM cards
+         WHERE deckId IN (:deckIds) AND suspended = 0 AND state != 'NEW'
         """
     )
-    suspend fun nextDueAt(deckId: Long): Long?
+    suspend fun nextDueAt(deckIds: List<Long>): Long?
 
     @Query("SELECT COUNT(*) FROM cards WHERE deckId = :deckId AND state = :state")
     suspend fun countInState(deckId: Long, state: CardState): Int
@@ -196,14 +259,68 @@ interface CardDao {
     @Query(
         """
         SELECT * FROM cards
-         WHERE front LIKE '%' || :term || '%'
-            OR back LIKE '%' || :term || '%'
-            OR sourceText LIKE '%' || :term || '%'
+         WHERE (:term = '' OR front LIKE '%' || :term || '%'
+                OR back LIKE '%' || :term || '%'
+                OR sourceText LIKE '%' || :term || '%')
+           AND (:tag = '' OR (' ' || tags || ' ') LIKE '% ' || :tag || ' %')
          ORDER BY createdAt DESC
          LIMIT 200
         """
     )
-    fun search(term: String): Flow<List<CardEntity>>
+    fun search(term: String, tag: String): Flow<List<CardEntity>>
+
+    /**
+     * Everything a filter matches, for studying ahead of an exam.
+     *
+     * Not limited to what is due - that is the point - and shuffled, because cramming in the
+     * order the cards were made teaches the order. Suspended cards stay out: the user set them
+     * aside on purpose.
+     */
+    @Query(
+        """
+        SELECT * FROM cards
+         WHERE suspended = 0
+           AND (:term = '' OR front LIKE '%' || :term || '%'
+                OR back LIKE '%' || :term || '%'
+                OR sourceText LIKE '%' || :term || '%')
+           AND (:tag = '' OR (' ' || tags || ' ') LIKE '% ' || :tag || ' %')
+         ORDER BY RANDOM()
+         LIMIT :limit
+        """
+    )
+    suspend fun cram(term: String, tag: String, limit: Int): List<CardEntity>
+
+    /** Every tag column with something in it, for building the list of tags in use. */
+    @Query("SELECT tags FROM cards WHERE tags != ''")
+    fun tagColumns(): Flow<List<String>>
+
+    /**
+     * Siblings of an answered card that should wait until tomorrow: same deck, same source
+     * sentence or picture, and not mid-learning - a card on a ten-minute step is in flight, and
+     * holding it back a day would break its learning steps.
+     */
+    @Query(
+        """
+        SELECT id FROM cards
+         WHERE deckId = :deckId AND id != :cardId AND suspended = 0
+           AND state IN ('NEW', 'REVIEW')
+           AND ((:sourceText IS NOT NULL AND sourceText = :sourceText)
+                OR (:imagePath IS NOT NULL AND imagePath = :imagePath))
+        """
+    )
+    suspend fun siblingsOf(
+        deckId: Long,
+        cardId: Long,
+        sourceText: String?,
+        imagePath: String?
+    ): List<Long>
+
+    @Query("UPDATE cards SET buriedUntil = :until WHERE id IN (:ids)")
+    suspend fun bury(ids: List<Long>, until: Long)
+
+    /** Every picture still used by some card, so the image store can drop the rest. */
+    @Query("SELECT DISTINCT imagePath FROM cards WHERE imagePath IS NOT NULL")
+    suspend fun imagePaths(): List<String>
 
     /** Cards forgotten so often they are worth rewriting. See [Scheduler.LEECH_THRESHOLD]. */
     @Query("SELECT * FROM cards WHERE lapses >= :threshold ORDER BY lapses DESC")
@@ -260,7 +377,7 @@ interface CardDao {
     @Query(
         """
         SELECT COUNT(*) FROM cards
-         WHERE suspended = 0
+         WHERE suspended = 0 AND buriedUntil <= :now
            AND (state = 'NEW' OR dueAt <= :now)
         """
     )
@@ -277,6 +394,9 @@ interface CardDao {
     @Query("SELECT front FROM cards WHERE deckId = :deckId")
     suspend fun frontsInDeck(deckId: Long): List<String>
 }
+
+/** One answer from the log, as the schedule fitter reads it. */
+data class LoggedAnswer(val cardId: Long, val reviewedAt: Long, val grade: com.layerbit.abhyas.data.model.Grade)
 
 /** One day's answer count, for the streak strip on the stats screen. */
 data class DailyCount(val day: String, val count: Int)
@@ -346,6 +466,13 @@ interface ReviewLogDao {
     /** A plain count rather than a Flow, for the reminder worker to ask once and exit. */
     @Query("SELECT COUNT(*) FROM review_log WHERE reviewedAt >= :since")
     suspend fun countSinceOnce(since: Long): Int
+
+    /**
+     * Every answer ever given, oldest first per card - what the schedule is fitted to. Three
+     * narrow columns rather than whole rows, since a long-time user has hundreds of thousands.
+     */
+    @Query("SELECT cardId, reviewedAt, grade FROM review_log ORDER BY cardId, reviewedAt")
+    suspend fun allAnswers(): List<LoggedAnswer>
 
     @Query("UPDATE review_log SET deckId = :destination WHERE deckId = :source")
     suspend fun moveAll(source: Long, destination: Long)

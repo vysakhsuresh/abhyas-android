@@ -2,6 +2,7 @@ package com.layerbit.abhyas.data.db
 
 import androidx.room.TypeConverter
 import com.layerbit.abhyas.data.model.CardState
+import com.layerbit.abhyas.data.model.CardType
 import com.layerbit.abhyas.data.model.Grade
 import com.layerbit.abhyas.data.ocr.ScriptOption
 
@@ -16,6 +17,11 @@ class Converters {
 
     @TypeConverter fun gradeToString(value: Grade): String = value.name
     @TypeConverter fun stringToGrade(value: String): Grade = Grade.valueOf(value)
+
+    /** Falls back to BASIC for the same reason [stringToScript] falls back: never refuse to open. */
+    @TypeConverter fun cardTypeToString(value: CardType): String = value.name
+    @TypeConverter fun stringToCardType(value: String): CardType =
+        runCatching { CardType.valueOf(value) }.getOrDefault(CardType.BASIC)
 
     @TypeConverter fun scriptToString(value: ScriptOption): String = value.name
 

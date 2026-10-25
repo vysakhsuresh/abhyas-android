@@ -3,6 +3,9 @@ package com.layerbit.abhyas.data.backup
 import com.layerbit.abhyas.data.db.CardEntity
 import com.layerbit.abhyas.data.db.DeckEntity
 import com.layerbit.abhyas.data.model.CardState
+import com.layerbit.abhyas.data.model.CardType
+import com.layerbit.abhyas.data.model.Tags
+import com.layerbit.abhyas.data.occlusion.ImageNames
 import com.layerbit.abhyas.data.ocr.ScriptOption
 import com.layerbit.abhyas.data.srs.Fsrs
 import com.layerbit.abhyas.data.srs.Scheduler
@@ -12,7 +15,13 @@ import org.json.JSONObject
 /** A whole collection, as it travels in and out of a backup file. */
 data class Backup(
     val decks: List<DeckEntity>,
-    val cards: List<CardEntity>
+    val cards: List<CardEntity>,
+    /**
+     * The pictures behind image-occlusion cards, by stored name. Filled on decode; on encode the
+     * streaming [BackupCodec.writeTo] reads them one at a time instead, so a collection of diagrams
+     * never has to sit in memory all at once.
+     */
+    val images: Map<String, ByteArray> = emptyMap()
 )
 
 /**
@@ -33,10 +42,53 @@ data class Backup(
  */
 object BackupCodec {
 
-    const val FORMAT_VERSION = 1
+    /**
+     * 2 added tags, subdecks and picture cards. Readers never refuse an unknown version - every
+     * field is optional - so this is a label for a human reading the file, not a gate.
+     */
+    const val FORMAT_VERSION = 2
     const val MIME_TYPE = "application/json"
 
+    /** The whole file as a string, pictures included. For tests and small collections. */
     fun encode(backup: Backup): String {
+        val out = java.io.ByteArrayOutputStream()
+        writeTo(out, backup, backup.images.keys.toList()) { backup.images[it] }
+        return out.toString(Charsets.UTF_8.name())
+    }
+
+    /**
+     * Write the file to [out], streaming each picture through a Base64 encoder as it goes.
+     *
+     * The decks and cards are small enough to build as one JSON object; the pictures are not - a
+     * hundred diagrams is tens of megabytes of Base64, and holding that as one string would be an
+     * OutOfMemoryError on exactly the user with the most to lose. So the JSON is written without its
+     * closing brace, and the `images` object is appended to it picture by picture.
+     */
+    fun writeTo(
+        out: java.io.OutputStream,
+        backup: Backup,
+        imageNames: List<String>,
+        readImage: (String) -> ByteArray?
+    ) {
+        val head = toJson(backup).toString(2)
+        val writer = out.bufferedWriter(Charsets.UTF_8)
+        writer.write(head.substring(0, head.lastIndexOf('}')).trimEnd())
+        writer.write(",\n  \"images\": {")
+        var first = true
+        imageNames.distinct().forEach { name ->
+            val bytes = readImage(name) ?: return@forEach
+            writer.write(if (first) "\n    " else ",\n    ")
+            first = false
+            writer.write(JSONObject.quote(name))
+            writer.write(": \"")
+            writer.write(java.util.Base64.getEncoder().encodeToString(bytes))
+            writer.write("\"")
+        }
+        writer.write("\n  }\n}\n")
+        writer.flush()
+    }
+
+    private fun toJson(backup: Backup): JSONObject {
         val root = JSONObject()
         root.put("format", FORMAT_VERSION)
         root.put("app", "abhyas")
@@ -51,6 +103,7 @@ object BackupCodec {
                     put("createdAt", deck.createdAt)
                     put("lastUsedAt", deck.lastUsedAt)
                     put("script", deck.script.name)
+                    put("parentId", deck.parentId ?: JSONObject.NULL)
                 }
             )
         }
@@ -76,12 +129,16 @@ object BackupCodec {
                     put("learningStep", card.learningStep)
                     put("suspended", card.suspended)
                     put("createdAt", card.createdAt)
+                    put("type", card.type.name)
+                    put("tags", card.tags)
+                    put("imagePath", card.imagePath ?: JSONObject.NULL)
+                    put("occlusion", card.occlusion ?: JSONObject.NULL)
                 }
             )
         }
         root.put("cards", cards)
 
-        return root.toString(2)
+        return root
     }
 
     /**
@@ -102,7 +159,10 @@ object BackupCodec {
                 createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
                 lastUsedAt = obj.optLong("lastUsedAt", System.currentTimeMillis()),
                 script = runCatching { ScriptOption.valueOf(obj.optString("script")) }
-                    .getOrDefault(ScriptOption.DEFAULT)
+                    .getOrDefault(ScriptOption.DEFAULT),
+                // isNull first for the same reason as sourceText below: Android's optLong on a
+                // JSON null returns the fallback, but the JVM's may not agree, and 0 is no deck.
+                parentId = if (obj.isNull("parentId")) null else obj.optLong("parentId").takeIf { it != 0L }
             )
         }
 
@@ -155,12 +215,37 @@ object BackupCodec {
                 lapses = obj.optInt("lapses"),
                 learningStep = obj.optInt("learningStep"),
                 suspended = obj.optBoolean("suspended"),
-                createdAt = obj.optLong("createdAt", System.currentTimeMillis())
-            )
+                createdAt = obj.optLong("createdAt", System.currentTimeMillis()),
+                type = runCatching { CardType.valueOf(obj.optString("type")) }
+                    .getOrDefault(CardType.BASIC),
+                tags = Tags.normalise(obj.optString("tags", "")),
+                imagePath = optStringOrNull(obj, "imagePath")?.takeIf { ImageNames.isSafe(it) },
+                occlusion = optStringOrNull(obj, "occlusion")
+            ).let { card ->
+                // A picture card that lost its picture or its masks would draw as a blank box
+                // forever. Kept as a plain text card instead, so its words and schedule survive.
+                if (card.type == CardType.OCCLUSION && (card.imagePath == null || card.occlusion == null)) {
+                    card.copy(type = CardType.BASIC, imagePath = null, occlusion = null)
+                } else {
+                    card
+                }
+            }
         }
 
-        return Backup(decks, cards)
+        val images = mutableMapOf<String, ByteArray>()
+        root.optJSONObject("images")?.let { obj ->
+            obj.keys().forEach { name ->
+                if (!ImageNames.isSafe(name)) return@forEach
+                runCatching { java.util.Base64.getDecoder().decode(obj.getString(name)) }
+                    .getOrNull()?.let { images[name] = it }
+            }
+        }
+
+        return Backup(decks, cards, images)
     }
+
+    private fun optStringOrNull(obj: JSONObject, key: String): String? =
+        if (!obj.has(key) || obj.isNull(key)) null else obj.optString(key).takeIf { it.isNotBlank() }
 
     /**
      * The card's FSRS memory state: as written if the file has it, converted from SM-2 if not.

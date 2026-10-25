@@ -1,43 +1,37 @@
 package com.layerbit.abhyas.ui.capture
 
-import android.Manifest
-import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -47,28 +41,32 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.layerbit.abhyas.ui.components.screenPadding
+import com.layerbit.abhyas.R
+import com.layerbit.abhyas.ui.components.AbhyasTextField
 import com.layerbit.abhyas.ui.components.Card
 import com.layerbit.abhyas.ui.components.EmptyState
+import com.layerbit.abhyas.ui.components.FieldLabel
 import com.layerbit.abhyas.ui.components.Pill
 import com.layerbit.abhyas.ui.components.PrimaryButton
 import com.layerbit.abhyas.ui.components.ScreenTitle
-import com.layerbit.abhyas.ui.components.TextLink
 import com.layerbit.abhyas.ui.components.SecondaryButton
+import com.layerbit.abhyas.ui.components.TextLink
+import com.layerbit.abhyas.ui.labelRes
 import com.layerbit.abhyas.ui.repositoryViewModel
 import com.layerbit.abhyas.ui.theme.AbhyasColors
+
+/** The most photos a single gallery pick reads. A chapter, not a camera roll. */
+private const val MAX_PICKED_PAGES = 30
 
 @Composable
 fun CaptureScreen(deckId: Long, onDone: () -> Unit) {
@@ -78,29 +76,45 @@ fun CaptureScreen(deckId: Long, onDone: () -> Unit) {
         CaptureViewModel(it, appContext, deckId)
     }
     val step by viewModel.step.collectAsStateWithLifecycle()
+    val batch by viewModel.batch.collectAsStateWithLifecycle()
 
     // The photo picker needs no storage permission at all - the system picker returns exactly the
-    // one image the user chose, which is why Abhyas never asks for gallery access.
+    // images the user chose, which is why Abhyas never asks for gallery access.
     val pickImage = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia()
     ) { uri -> uri?.let(viewModel::process) }
+    val pickImages = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickMultipleVisualMedia(MAX_PICKED_PAGES)
+    ) { uris -> viewModel.processAll(uris) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         when (val current = step) {
-            is CaptureStep.Camera -> CameraStep(
+            is CaptureStep.Camera -> CameraViewfinder(
+                title = stringResource(R.string.capture_title),
+                subtitle = stringResource(R.string.capture_subtitle),
+                pickLabel = stringResource(
+                    if (batch) R.string.capture_choose_photos else R.string.capture_choose_photo
+                ),
                 onCaptured = viewModel::process,
                 onPickImage = {
-                    pickImage.launch(
-                        PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
-                    )
+                    val request = PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                    if (batch) pickImages.launch(request) else pickImage.launch(request)
                 },
-                onCancel = onDone
+                onCancel = onDone,
+                extras = {
+                    BatchBar(
+                        batch = batch,
+                        camera = current,
+                        onToggle = viewModel::setBatch,
+                        onReview = viewModel::review
+                    )
+                }
             )
 
-            is CaptureStep.Reading -> ReadingStep()
+            is CaptureStep.Reading -> ReadingStep(current)
 
             is CaptureStep.Empty -> ProblemStep(
-                message = current.reason,
+                problem = current.problem,
                 onRetake = viewModel::retake,
                 onCancel = onDone
             )
@@ -110,7 +124,7 @@ fun CaptureScreen(deckId: Long, onDone: () -> Unit) {
                 onToggle = viewModel::toggleKeep,
                 onEdit = viewModel::edit,
                 onSetAll = viewModel::setAllKept,
-                onRetake = viewModel::retake,
+                onAddPage = viewModel::addAnotherPage,
                 onSave = viewModel::save
             )
 
@@ -119,159 +133,94 @@ fun CaptureScreen(deckId: Long, onDone: () -> Unit) {
     }
 }
 
-// ------------------------------------------------------------------------------------- camera
+// ----------------------------------------------------------------------------------- batching
 
+/**
+ * The batch switch, and - once pages are collected - the tally and the way out to the review.
+ *
+ * What happened to the page just read is said here, on the camera, because in a batch the user
+ * never leaves it: a page that came back empty has to be visible before they turn to the next one.
+ */
 @Composable
-private fun CameraStep(
-    onCaptured: (android.net.Uri) -> Unit,
-    onPickImage: () -> Unit,
-    onCancel: () -> Unit
+private fun BatchBar(
+    batch: Boolean,
+    camera: CaptureStep.Camera,
+    onToggle: (Boolean) -> Unit,
+    onReview: () -> Unit
 ) {
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    val camera = remember { CameraCapture() }
-
-    var hasPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
-                PackageManager.PERMISSION_GRANTED
-        )
-    }
-    val requestPermission = rememberLauncherForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { granted -> hasPermission = granted }
-
-    LaunchedEffect(Unit) {
-        if (!hasPermission) requestPermission.launch(Manifest.permission.CAMERA)
-    }
-
-    var captureFailed by remember { mutableStateOf(false) }
-
-    // Release the camera when this step leaves composition.
-    //
-    // bindToLifecycle ties the session to the NavBackStackEntry, which stays RESUMED for the whole
-    // capture route - so without this the sensor kept streaming through OCR and through the entire
-    // review screen, where the user may be reading and editing for minutes, into a PreviewView that
-    // is no longer attached to anything. It was only released when the route was finally popped.
-    // Retaking rebinds, which is what the camera step does on re-entry anyway.
-    DisposableEffect(camera) {
-        onDispose { camera.unbind() }
-    }
-
-    Column(
+    Spacer(Modifier.height(12.dp))
+    Row(
         modifier = Modifier
-            .fillMaxSize()
-            .padding(screenPadding(extraBottom = 28.dp))
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .toggleable(value = batch, role = Role.Switch, onValueChange = onToggle)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        TextLink(
-            text = "Cancel",
-            color = AbhyasColors.Muted,
-            onClick = onCancel,
-            fontSize = 14.sp
-        )
-        Spacer(Modifier.height(18.dp))
-        ScreenTitle("Photograph a page", "Fill the frame with the text. Good light helps.")
-
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .weight(1f)
-                .clip(RoundedCornerShape(20.dp))
-                .background(AbhyasColors.SurfaceDim)
-                .border(1.dp, AbhyasColors.Border, RoundedCornerShape(20.dp)),
-            contentAlignment = Alignment.Center
-        ) {
-            if (hasPermission) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { ctx ->
-                        PreviewView(ctx).also { view ->
-                            view.scaleType = PreviewView.ScaleType.FILL_CENTER
-                            camera.bind(ctx, lifecycleOwner, view)
-                        }
-                    }
-                )
-            } else {
-                Text(
-                    text = "Camera access is needed to photograph a page.\n" +
-                        "You can also pick an existing photo instead.",
-                    color = AbhyasColors.Muted,
-                    fontSize = 14.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(28.dp)
-                )
-            }
-        }
-
-        if (captureFailed) {
-            Spacer(Modifier.height(12.dp))
+        SmallCheck(checked = batch)
+        Spacer(Modifier.width(10.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(stringResource(R.string.capture_batch_label), fontSize = 14.sp, fontWeight = FontWeight.Medium)
             Text(
-                text = "That photo could not be saved. Check you have storage free, " +
-                    "or pick an existing photo instead.",
-                color = AbhyasColors.Again,
-                fontSize = 13.5.sp,
-                textAlign = TextAlign.Center,
-                lineHeight = 19.sp,
-                modifier = Modifier.fillMaxWidth()
+                stringResource(R.string.capture_batch_hint),
+                color = AbhyasColors.Dim,
+                fontSize = 12.sp,
+                lineHeight = 16.sp
             )
         }
+    }
 
-        Spacer(Modifier.height(20.dp))
+    camera.lastPageProblem?.let { problem ->
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = problemText(problem),
+            color = AbhyasColors.Again,
+            fontSize = 12.5.sp,
+            lineHeight = 17.sp
+        )
+    }
+    camera.lastPageAdded?.let { added ->
+        Spacer(Modifier.height(6.dp))
+        Text(
+            text = pluralStringResource(R.plurals.capture_page_added, added, camera.pages, added),
+            color = AbhyasColors.Good,
+            fontSize = 12.5.sp
+        )
+    }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            TextLink(
-                text = "Choose photo",
-                color = AbhyasColors.Muted,
-                onClick = onPickImage,
-                fontSize = 14.5.sp
-            )
-
-            // Enabled on a bound camera, not merely on the permission - which is granted well
-            // before the provider resolves, leaving a live shutter that called through to nothing.
-            ShutterButton(enabled = hasPermission && camera.isReady) {
-                captureFailed = false
-                camera.takePicture(context) { uri ->
-                    // A capture can fail for reasons the user can do something about - no storage
-                    // left, the camera grabbed by another app - and failing in silence makes the
-                    // shutter look broken. They tap it again, and again.
-                    if (uri == null) captureFailed = true else onCaptured(uri)
-                }
-            }
-
-            // Balances the shutter in the centre without adding a second action competing with it.
-            Spacer(Modifier.size(88.dp, 1.dp))
-        }
+    if (camera.suggestions > 0) {
+        Spacer(Modifier.height(10.dp))
+        PrimaryButton(
+            text = pluralStringResource(R.plurals.capture_review_all, camera.suggestions, camera.suggestions),
+            onClick = onReview
+        )
     }
 }
 
 @Composable
-private fun ShutterButton(enabled: Boolean, onClick: () -> Unit) {
+private fun SmallCheck(checked: Boolean) {
     Box(
         modifier = Modifier
-            .size(72.dp)
-            .clip(CircleShape)
-            .background(if (enabled) AbhyasColors.Saffron else AbhyasColors.SaffronDim)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
-            // The shutter has no icon and no label - it is a saffron circle, which is the right
-            // design and leaves nothing for a screen reader to read out. Naming it here is the only
-            // thing that makes the app's primary action usable with TalkBack. `disabled()` is what
-            // gets it announced as "Take photo, disabled" rather than silently dropped from the
-            // tree, since clickable(enabled = false) removes the click action and with it the node.
-            .semantics {
-                contentDescription = "Take photo"
-                if (!enabled) disabled()
-            }
-    )
+            .size(22.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(if (checked) AbhyasColors.Saffron else AbhyasColors.SurfaceDim)
+            .border(
+                1.dp,
+                if (checked) AbhyasColors.Saffron else AbhyasColors.BorderStrong,
+                RoundedCornerShape(6.dp)
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        if (checked) {
+            Icon(Icons.Filled.Check, null, tint = AbhyasColors.OnSaffron, modifier = Modifier.size(15.dp))
+        }
+    }
 }
 
 // ------------------------------------------------------------------------------------ progress
 
 @Composable
-private fun ReadingStep() {
+private fun ReadingStep(step: CaptureStep.Reading) {
     Column(
         modifier = Modifier.fillMaxSize().padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -279,10 +228,18 @@ private fun ReadingStep() {
     ) {
         CircularProgressIndicator(color = AbhyasColors.Saffron)
         Spacer(Modifier.height(20.dp))
-        Text("Reading the page", fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+        Text(
+            text = if (step.of > 1) {
+                stringResource(R.string.capture_reading_of, step.page, step.of)
+            } else {
+                stringResource(R.string.capture_reading)
+            },
+            fontSize = 17.sp,
+            fontWeight = FontWeight.SemiBold
+        )
         Spacer(Modifier.height(6.dp))
         Text(
-            "This happens on your phone. Nothing is uploaded.",
+            stringResource(R.string.capture_on_device),
             color = AbhyasColors.Muted,
             fontSize = 13.5.sp,
             textAlign = TextAlign.Center
@@ -291,17 +248,25 @@ private fun ReadingStep() {
 }
 
 @Composable
-private fun ProblemStep(message: String, onRetake: () -> Unit, onCancel: () -> Unit) {
+private fun problemText(problem: PageProblem): String = when (problem) {
+    PageProblem.Unreadable -> stringResource(R.string.problem_unreadable)
+    is PageProblem.NoText -> stringResource(R.string.problem_no_text, stringResource(problem.script.labelRes()))
+    PageProblem.NothingCardShaped -> stringResource(R.string.problem_nothing_card_shaped)
+    PageProblem.AlreadyInDeck -> stringResource(R.string.problem_already_in_deck)
+}
+
+@Composable
+private fun ProblemStep(problem: PageProblem, onRetake: () -> Unit, onCancel: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize().padding(28.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        EmptyState(title = "Nothing to make cards from", message = message)
+        EmptyState(title = stringResource(R.string.problem_title), message = problemText(problem))
         Spacer(Modifier.height(12.dp))
-        PrimaryButton("Try another page", onClick = onRetake)
+        PrimaryButton(stringResource(R.string.action_try_another_page), onClick = onRetake)
         Spacer(Modifier.height(10.dp))
-        SecondaryButton("Back to deck", onClick = onCancel)
+        SecondaryButton(stringResource(R.string.action_back_to_deck), onClick = onCancel)
     }
 }
 
@@ -315,23 +280,24 @@ private fun SavedStep(count: Int, onDone: () -> Unit) {
         verticalArrangement = Arrangement.Center
     ) {
         Text(
-            text = when (count) {
-                0 -> "Nothing added"
-                1 -> "1 card added"
-                else -> "$count cards added"
+            text = if (count == 0) {
+                stringResource(R.string.saved_none)
+            } else {
+                pluralStringResource(R.plurals.saved_count, count, count)
             },
             fontSize = 28.sp,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            text = if (count == 0) "You kept none of the suggestions."
-            else "They are ready to study now.",
+            text = stringResource(if (count == 0) R.string.saved_none_detail else R.string.saved_ready),
             color = AbhyasColors.Muted,
-            fontSize = 14.5.sp
+            fontSize = 14.5.sp,
+            textAlign = TextAlign.Center
         )
         Spacer(Modifier.height(26.dp))
-        PrimaryButton("Back to deck", onClick = onDone)
+        PrimaryButton(stringResource(R.string.action_back_to_deck), onClick = onDone)
     }
 }
 
@@ -343,17 +309,19 @@ private fun ReviewStep(
     onToggle: (Int) -> Unit,
     onEdit: (Int, String, String) -> Unit,
     onSetAll: (Boolean) -> Unit,
-    onRetake: () -> Unit,
-    onSave: () -> Unit
+    onAddPage: () -> Unit,
+    onSave: (String) -> Unit
 ) {
     val keptCount = items.count { it.keep }
+    val pages = items.maxOfOrNull { it.page } ?: 1
+    var tags by rememberSaveable { mutableStateOf("") }
 
     // Clearing the navigation bar is the outer Column's job here: the list scrolls, but the
     // footer below it is fixed, and without this the "Add cards" button sits under the bar.
     Column(modifier = Modifier.fillMaxSize().navigationBarsPadding()) {
         LazyColumn(
             modifier = Modifier.weight(1f),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
+            contentPadding = PaddingValues(
                 start = 20.dp,
                 end = 20.dp,
                 top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 18.dp,
@@ -363,21 +331,25 @@ private fun ReviewStep(
         ) {
             item {
                 ScreenTitle(
-                    "${items.size} suggestions",
-                    "Uncheck what you do not want. Tap any card to edit it."
+                    pluralStringResource(R.plurals.review_title, items.size, items.size),
+                    if (pages > 1) {
+                        pluralStringResource(R.plurals.review_subtitle_pages, pages, pages)
+                    } else {
+                        stringResource(R.string.review_subtitle)
+                    }
                 )
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
                     TextLink(
-                        text = "Keep all",
+                        text = stringResource(R.string.review_keep_all),
                         color = AbhyasColors.Saffron,
                         onClick = { onSetAll(true) },
                         fontSize = 13.5.sp
                     )
                     TextLink(
-                        text = "Drop all",
+                        text = stringResource(R.string.review_drop_all),
                         color = AbhyasColors.Muted,
                         onClick = { onSetAll(false) },
                         fontSize = 13.5.sp
@@ -387,30 +359,49 @@ private fun ReviewStep(
             items(items, key = { it.id }) { item ->
                 ReviewCard(
                     item = item,
+                    showPage = pages > 1,
                     onToggle = { onToggle(item.id) },
                     onEdit = { front, back -> onEdit(item.id, front, back) }
+                )
+            }
+            item {
+                // Tags for the whole page at once - the moment a student knows which chapter and
+                // which exam these cards belong to is the moment they photographed them.
+                Spacer(Modifier.height(4.dp))
+                FieldLabel(stringResource(R.string.review_tags_label))
+                Spacer(Modifier.height(4.dp))
+                AbhyasTextField(
+                    value = tags,
+                    onValueChange = { tags = it },
+                    placeholder = stringResource(R.string.tags_placeholder),
+                    singleLine = true
                 )
             }
         }
 
         Column(modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 28.dp)) {
             PrimaryButton(
-                text = when (keptCount) {
-                    0 -> "Nothing selected"
-                    1 -> "Add 1 card"
-                    else -> "Add $keptCount cards"
+                text = if (keptCount == 0) {
+                    stringResource(R.string.review_nothing_selected)
+                } else {
+                    pluralStringResource(R.plurals.review_add, keptCount, keptCount)
                 },
                 enabled = keptCount > 0,
-                onClick = onSave
+                onClick = { onSave(tags) }
             )
             Spacer(Modifier.height(10.dp))
-            SecondaryButton("Photograph another page", onClick = onRetake)
+            SecondaryButton(stringResource(R.string.review_add_page), onClick = onAddPage)
         }
     }
 }
 
 @Composable
-private fun ReviewCard(item: ReviewItem, onToggle: () -> Unit, onEdit: (String, String) -> Unit) {
+private fun ReviewCard(
+    item: ReviewItem,
+    showPage: Boolean,
+    onToggle: () -> Unit,
+    onEdit: (String, String) -> Unit
+) {
     var editing by remember { mutableStateOf(false) }
 
     // Each side keeps its own text, rather than reading it back out of the ViewModel's StateFlow.
@@ -433,25 +424,32 @@ private fun ReviewCard(item: ReviewItem, onToggle: () -> Unit, onEdit: (String, 
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Pill(item.kind.label, if (item.keep) AbhyasColors.Saffron else AbhyasColors.Dim)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Pill(stringResource(item.kind.labelRes()), if (item.keep) AbhyasColors.Saffron else AbhyasColors.Dim)
+                if (showPage) Pill(stringResource(R.string.review_page, item.page), AbhyasColors.Dim)
+            }
             Checkbox(checked = item.keep, onClick = onToggle)
         }
 
         Spacer(Modifier.height(12.dp))
 
         if (editing) {
-            EditableSide(label = "Question", value = front) {
+            FieldLabel(stringResource(R.string.label_question))
+            Spacer(Modifier.height(4.dp))
+            AbhyasTextField(value = front, onValueChange = {
                 front = it
                 onEdit(it, back)
-            }
+            })
             Spacer(Modifier.height(10.dp))
-            EditableSide(label = "Answer", value = back) {
+            FieldLabel(stringResource(R.string.label_answer))
+            Spacer(Modifier.height(4.dp))
+            AbhyasTextField(value = back, onValueChange = {
                 back = it
                 onEdit(front, it)
-            }
+            })
             Spacer(Modifier.height(10.dp))
             TextLink(
-                text = "Done editing",
+                text = stringResource(R.string.review_done_editing),
                 color = AbhyasColors.Saffron,
                 onClick = { editing = false },
                 fontSize = 13.5.sp
@@ -460,9 +458,10 @@ private fun ReviewCard(item: ReviewItem, onToggle: () -> Unit, onEdit: (String, 
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable(role = Role.Button, onClickLabel = "Edit this card") {
-                        editing = true
-                    }
+                    .clickable(
+                        role = Role.Button,
+                        onClickLabel = stringResource(R.string.a11y_edit_card)
+                    ) { editing = true }
             ) {
                 Text(
                     text = front,
@@ -483,26 +482,6 @@ private fun ReviewCard(item: ReviewItem, onToggle: () -> Unit, onEdit: (String, 
     }
 }
 
-@Composable
-private fun EditableSide(label: String, value: String, onChange: (String) -> Unit) {
-    Column {
-        Text(label.uppercase(), color = AbhyasColors.Dim, fontSize = 10.sp, letterSpacing = 1.sp)
-        Spacer(Modifier.height(4.dp))
-        OutlinedTextField(
-            value = value,
-            onValueChange = onChange,
-            modifier = Modifier.fillMaxWidth(),
-            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 15.sp),
-            colors = TextFieldDefaults.colors(
-                focusedContainerColor = AbhyasColors.SurfaceDim,
-                unfocusedContainerColor = AbhyasColors.SurfaceDim,
-                focusedIndicatorColor = AbhyasColors.Saffron,
-                unfocusedIndicatorColor = AbhyasColors.Border
-            )
-        )
-    }
-}
-
 /**
  * A plain square checkbox - Material3's has a ripple and padding that unbalance the card header.
  *
@@ -513,6 +492,7 @@ private fun EditableSide(label: String, value: String, onChange: (String) -> Uni
  */
 @Composable
 private fun Checkbox(checked: Boolean, onClick: () -> Unit) {
+    val description = stringResource(R.string.a11y_keep_card)
     Box(
         modifier = Modifier
             .size(48.dp)
@@ -521,7 +501,7 @@ private fun Checkbox(checked: Boolean, onClick: () -> Unit) {
                 role = Role.Checkbox,
                 onValueChange = { onClick() }
             )
-            .semantics { contentDescription = "Keep this card" },
+            .semantics { contentDescription = description },
         contentAlignment = Alignment.Center
     ) {
         CheckboxFace(checked)

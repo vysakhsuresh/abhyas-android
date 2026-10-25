@@ -84,11 +84,11 @@ class ReminderWorker(
             manager.createNotificationChannel(
                 NotificationChannel(
                     CHANNEL_ID,
-                    "Daily reminder",
+                    applicationContext.getString(R.string.reminder_title),
                     // Low: it belongs in the shade, not over whatever the user is doing.
                     NotificationManager.IMPORTANCE_LOW
                 ).apply {
-                    description = "A nudge when you have cards waiting."
+                    description = applicationContext.getString(R.string.reminder_channel_description)
                 }
             )
         }
@@ -103,8 +103,8 @@ class ReminderWorker(
 
         val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle(if (waiting == 1) "1 card is waiting" else "$waiting cards are waiting")
-            .setContentText("A few minutes now is worth an hour later.")
+            .setContentTitle(applicationContext.resources.getQuantityString(R.plurals.reminder_waiting, waiting, waiting))
+            .setContentText(applicationContext.getString(R.string.reminder_nudge))
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setAutoCancel(true)
             .setContentIntent(open)

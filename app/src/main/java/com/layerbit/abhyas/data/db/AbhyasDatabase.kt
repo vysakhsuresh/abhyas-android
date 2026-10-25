@@ -10,7 +10,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 
 @Database(
     entities = [DeckEntity::class, CardEntity::class, ReviewLogEntity::class],
-    version = 3,
+    version = 4,
     exportSchema = true
 )
 @TypeConverters(Converters::class)
@@ -94,11 +94,30 @@ abstract class AbhyasDatabase : RoomDatabase() {
         }
 
         /**
+         * v3 -> v4: tags, subdecks, sibling burying and image-occlusion cards.
+         *
+         * Every change is an added column with a default that means "as before" - a BASIC card, no
+         * tags, no picture, never buried, a top-level deck - so no existing row needs rewriting and
+         * nothing about how a current collection studies changes until the user uses a new feature.
+         */
+        private val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE cards ADD COLUMN type TEXT NOT NULL DEFAULT 'BASIC'")
+                db.execSQL("ALTER TABLE cards ADD COLUMN tags TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE cards ADD COLUMN imagePath TEXT")
+                db.execSQL("ALTER TABLE cards ADD COLUMN occlusion TEXT")
+                db.execSQL("ALTER TABLE cards ADD COLUMN buriedUntil INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE decks ADD COLUMN parentId INTEGER")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_decks_parentId ON decks (parentId)")
+            }
+        }
+
+        /**
          * Every migration, in one place so the builder below and the migration tests cannot disagree
          * about which ones exist. A migration present here but forgotten in a test would be exactly
          * the one that goes unchecked.
          */
-        val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+        val MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
         fun get(context: Context): AbhyasDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Only a copy of the crash log, placed in this cache subdirectory at the moment the user chooses to
+  send it. Nothing else in the app's storage - the database, the pictures - is reachable through the
+  provider at all, granted or not.
+-->
+<paths>
+    <cache-path name="diagnostics" path="diagnostics/" />
+</paths>
