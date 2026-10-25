@@ -976,8 +976,356 @@ class HeuristicCardGeneratorTest {
         }
     }
 
+    // ------------------------------------------------------------------------------------ tables
+
+    /**
+     * Where one line of [text] sits: [LINE_HEIGHT] tall, and as wide as its characters at
+     * [charWidth] each - so a short term really is a short box, which the prose guard measures.
+     */
+    private fun at(left: Int, top: Int, text: String, charWidth: Int = CHAR_WIDTH) =
+        text to TextBox(left, top, left + text.length * charWidth, top + LINE_HEIGHT)
+
+    /** One block holding [placed] in this order, each line with its own box, as ML Kit now reports. */
+    private fun placed(vararg placed: Pair<String, TextBox>) = PageBlock(
+        lines = placed.map { it.first },
+        box = placed.map { it.second }.reduce(TextBox::union),
+        lineBoxes = placed.map { it.second }
+    )
+
+    /** One single-line block per cell, with only a block box - the commonest delivery for short cells. */
+    private fun cellBlocks(vararg cells: Pair<String, TextBox>) =
+        cells.map { (text, box) -> PageBlock(listOf(text), box) }
+
+    /** A table laid out the way a textbook prints one: terms at x=100, answers at x=400. */
+    private fun tableRows(rows: List<Pair<String, String>>, firstTop: Int = 100, charWidth: Int = CHAR_WIDTH) =
+        rows.flatMapIndexed { i, (term, answer) ->
+            val top = firstTop + i * ROW_PITCH
+            listOf(at(TERM_X, top, term, charWidth), at(ANSWER_X, top, answer, charWidth))
+        }
+
+    private val organelles = listOf(
+        "Mitochondria" to "Powerhouse of the cell",
+        "Ribosome" to "Protein synthesis",
+        "Chloroplast" to "Site of photosynthesis",
+        "Nucleus" to "Control centre of the cell"
+    )
+
+    private fun assertOrganelleCards(result: List<CardCandidate>) {
+        organelles.forEach { (term, answer) ->
+            val card = result.withFront(term)
+            assertNotNull("the row for $term should become a card: $result", card)
+            assertEquals(answer, card!!.back)
+            assertEquals(CardKind.TABLE, card.kind)
+        }
+    }
+
+    @Test
+    fun `a clean four-row table pairs each term with the answer on its row`() {
+        // Each cell its own block, in an order that pairs nothing: every term, then every answer.
+        val cells = tableRows(organelles)
+        val page = PageText(
+            cellBlocks(*cells.filterIndexed { i, _ -> i % 2 == 0 }.toTypedArray()) +
+                cellBlocks(*cells.filterIndexed { i, _ -> i % 2 == 1 }.toTypedArray()),
+            ScriptProfile.Latin
+        )
+
+        val result = cardsFrom(page)
+
+        assertOrganelleCards(result)
+        assertEquals("one card per row and nothing else: $result", 4, result.size)
+    }
+
+    @Test
+    fun `a table delivered as a left column block and a right column block is paired by row`() {
+        // ML Kit's commonest reading of a table: the whole left column as one block, the whole
+        // right column as another. Read in order, that is four terms and then four answers.
+        val rows = tableRows(organelles)
+        val page = PageText(
+            listOf(
+                placed(*rows.filterIndexed { i, _ -> i % 2 == 1 }.toTypedArray()),
+                placed(*rows.filterIndexed { i, _ -> i % 2 == 0 }.toTypedArray())
+            ),
+            ScriptProfile.Latin
+        )
+
+        val result = cardsFrom(page)
+
+        assertOrganelleCards(result)
+        assertTrue("no table line may come back as prose: $result", result.all { it.kind == CardKind.TABLE })
+    }
+
+    @Test
+    fun `a table read as one block of interleaved lines is not welded into prose`() {
+        // The other delivery: one block, term and answer alternating. Run-joining reads that as a
+        // single paragraph - "Mitochondria Powerhouse of the cell Ribosome Protein synthesis..."
+        val page = PageText(listOf(placed(*tableRows(organelles).toTypedArray())), ScriptProfile.Latin)
+
+        val result = cardsFrom(page)
+
+        assertOrganelleCards(result)
+        assertTrue("no table line may come back as prose: $result", result.all { it.kind == CardKind.TABLE })
+    }
+
+    @Test
+    fun `a term printed with a colon becomes one table card, not a table card and a definition`() {
+        // "Mitochondria:" next to its answer is also exactly what the colon-definition pass looks
+        // for once the lines are joined. Consuming the lines is what stops the duplicate.
+        val withColons = organelles.map { (term, answer) -> "$term:" to answer }
+        val page = PageText(listOf(placed(*tableRows(withColons).toTypedArray())), ScriptProfile.Latin)
+
+        val result = cardsFrom(page)
+
+        assertOrganelleCards(result)
+        assertTrue(result.none { it.kind == CardKind.DEFINITION })
+    }
+
+    @Test
+    fun `a header row is part of the table but not a card`() {
+        val page = PageText(
+            listOf(placed(*tableRows(listOf("Term" to "Meaning") + organelles.take(3)).toTypedArray())),
+            ScriptProfile.Latin
+        )
+
+        val result = cardsFrom(page)
+
+        assertNull("the column headings are not a fact", result.withFront("Term"))
+        assertTrue(result.none { it.front.contains("Meaning") || it.back.contains("Meaning") })
+        assertEquals(3, result.count { it.kind == CardKind.TABLE })
+    }
+
+    @Test
+    fun `a header row in capitals is recognised without knowing its words`() {
+        val page = PageText(
+            listOf(placed(*tableRows(listOf("ORGANELLE" to "ROLE IN CELL") + organelles.take(3)).toTypedArray())),
+            ScriptProfile.Latin
+        )
+
+        val result = cardsFrom(page)
+
+        assertNull(result.withFront("ORGANELLE"))
+        assertEquals(3, result.count { it.kind == CardKind.TABLE })
+    }
+
+    @Test
+    fun `a Title Case first row is only a header when the rows under it are not Title Case too`() {
+        // Every row here is capitalised the same way, so nothing marks the first as different -
+        // dropping it would silently lose a real card.
+        val titled = listOf(
+            "Mitochondria" to "Powerhouse",
+            "Ribosome" to "Protein Factory",
+            "Chloroplast" to "Food Factory"
+        )
+        val page = PageText(listOf(placed(*tableRows(titled).toTypedArray())), ScriptProfile.Latin)
+
+        assertEquals("Powerhouse", cardsFrom(page).withFront("Mitochondria")?.back)
+    }
+
+    @Test
+    fun `a right cell that wraps onto a second line keeps its whole answer`() {
+        val page = PageText(
+            listOf(
+                placed(
+                    at(TERM_X, 100, "Mitochondria"), at(ANSWER_X, 100, "Site of aerobic respiration and"),
+                    // Nothing in the left column on this line: it is the answer above, continued.
+                    at(ANSWER_X, 140, "energy release in the cell"),
+                    at(TERM_X, 200, "Ribosome"), at(ANSWER_X, 200, "Protein synthesis"),
+                    at(TERM_X, 260, "Nucleus"), at(ANSWER_X, 260, "Control centre of the cell")
+                )
+            ),
+            ScriptProfile.Latin
+        )
+
+        val result = cardsFrom(page)
+
+        assertEquals(
+            "Site of aerobic respiration and energy release in the cell",
+            result.withFront("Mitochondria")?.back
+        )
+        assertEquals("Protein synthesis", result.withFront("Ribosome")?.back)
+        assertTrue("the wrapped line is not a card of its own: $result", result.size == 3)
+    }
+
+    @Test
+    fun `a Devanagari table pairs its rows and skips a Hindi header`() {
+        val rows = listOf(
+            "शब्द" to "अर्थ",
+            "माइटोकॉन्ड्रिया" to "कोशिका का ऊर्जा घर",
+            "राइबोसोम" to "प्रोटीन संश्लेषण",
+            "हरितलवक" to "प्रकाश संश्लेषण का स्थान"
+        )
+        val page = PageText(listOf(placed(*tableRows(rows).toTypedArray())), ScriptProfile.Devanagari)
+
+        val result = cardsFrom(page)
+
+        assertEquals("प्रोटीन संश्लेषण", result.withFront("राइबोसोम")?.back)
+        assertEquals("कोशिका का ऊर्जा घर", result.withFront("माइटोकॉन्ड्रिया")?.back)
+        assertNull("the header is not a card", result.withFront("शब्द"))
+        assertTrue(result.all { it.kind == CardKind.TABLE })
+    }
+
+    @Test
+    fun `a Chinese table pairs its rows and joins a wrapped cell without a space`() {
+        // All three terms are exactly three characters, so the left column is perfectly even -
+        // the shape the prose guard watches for. It must not mistake that for a column of text.
+        val page = PageText(
+            listOf(
+                placed(
+                    at(TERM_X, 100, "线粒体", CJK_CHAR_WIDTH), at(ANSWER_X, 100, "细胞的动力工厂", CJK_CHAR_WIDTH),
+                    at(TERM_X, 160, "核糖体", CJK_CHAR_WIDTH), at(ANSWER_X, 160, "合成蛋白质的场所", CJK_CHAR_WIDTH),
+                    at(TERM_X, 220, "叶绿体", CJK_CHAR_WIDTH), at(ANSWER_X, 220, "进行光合作用", CJK_CHAR_WIDTH),
+                    at(ANSWER_X, 260, "的场所", CJK_CHAR_WIDTH)
+                )
+            ),
+            ScriptProfile.Cjk.Chinese
+        )
+
+        val result = cardsFrom(page)
+
+        assertEquals("合成蛋白质的场所", result.withFront("核糖体")?.back)
+        assertEquals("a CJK wrap gains no space", "进行光合作用的场所", result.withFront("叶绿体")?.back)
+    }
+
+    @Test
+    fun `a table and the paragraph under it each make their own cards`() {
+        val page = PageText(
+            listOf(
+                placed(
+                    *tableRows(organelles).toTypedArray(),
+                    // In the same block as the table: removing the table's lines must leave this
+                    // one standing, with a box of its own.
+                    at(TERM_X, 400, "The vacuole is a storage sac for water and nutrients.")
+                )
+            ),
+            ScriptProfile.Latin
+        )
+
+        val result = cardsFrom(page)
+
+        assertOrganelleCards(result)
+        assertEquals("a storage sac for water and nutrients", result.withFront("What is the vacuole?")?.back)
+    }
+
+    @Test
+    fun `newspaper-style columns of prose are not paired`() {
+        // Geometrically a table in every respect: two left-aligned columns, a gutter, lines side
+        // by side on every row. Pairing them would ask "The council met on Tuesday to" and answer
+        // with half a sentence from the other column.
+        val page = PageText(
+            listOf(
+                justifiedColumn(
+                    60,
+                    "The council met on Tuesday to",
+                    "discuss the new budget for the",
+                    "coming year. Members agreed",
+                    "that spending on schools and",
+                    "roads should rise by a tenth."
+                ),
+                justifiedColumn(
+                    540,
+                    "Photosynthesis is the process by",
+                    "which green plants make food",
+                    "from sunlight, water and carbon",
+                    "dioxide, releasing oxygen as a",
+                    "by-product of the reaction."
+                )
+            ),
+            ScriptProfile.Latin
+        )
+
+        assertTrue(cardsFrom(page).none { it.kind == CardKind.TABLE })
+    }
+
+    @Test
+    fun `columns of prose with no punctuation in reach are still not paired`() {
+        // Narrow columns can go several lines without a comma or a stop, and each line is short
+        // enough to pass for a term. What gives them away is that prose fills its column and
+        // carries on in lowercase.
+        val page = PageText(
+            listOf(
+                justifiedColumn(60, "The council met on Tuesday", "to discuss the new budget", "for the coming year and", "agreed that spending on"),
+                justifiedColumn(540, "Green plants make their", "own food from sunlight and", "water in the leaves where", "the chlorophyll is kept")
+            ),
+            ScriptProfile.Latin
+        )
+
+        assertTrue(cardsFrom(page).none { it.kind == CardKind.TABLE })
+    }
+
+    @Test
+    fun `a short label beside a paragraph is not a table`() {
+        val page = PageText(
+            listOf(
+                placed(at(TERM_X, 100, "Note")),
+                placed(
+                    at(ANSWER_X, 100, "Osmosis is the movement of water across"),
+                    at(ANSWER_X, 140, "a semi-permeable membrane from a dilute"),
+                    at(ANSWER_X, 180, "solution into a more concentrated one"),
+                    at(ANSWER_X, 220, "until both sides are equal.")
+                )
+            ),
+            ScriptProfile.Latin
+        )
+
+        val result = cardsFrom(page)
+
+        assertTrue(result.none { it.kind == CardKind.TABLE })
+        assertNotNull("the paragraph still makes its own card: $result", result.withFront("What is Osmosis?"))
+    }
+
+    @Test
+    fun `two rows are not enough to call a table`() {
+        val page = PageText(listOf(placed(*tableRows(organelles.take(2)).toTypedArray())), ScriptProfile.Latin)
+
+        assertTrue(cardsFrom(page).none { it.kind == CardKind.TABLE })
+    }
+
+    @Test
+    fun `a page with no boxes has no tables`() {
+        // No layout, no geometry to pair by. Guessing from the alternation of the lines would be
+        // exactly the reading-order trust the rest of the pipeline refuses.
+        val result = cards(
+            listOf(organelles.flatMap { (term, answer) -> listOf(term, answer) }),
+            ScriptProfile.Latin
+        )
+
+        assertTrue(result.none { it.kind == CardKind.TABLE })
+    }
+
+    @Test
+    fun `multi-line blocks with only a block box have no tables`() {
+        // Without per-line boxes there is no telling which line sat on which row.
+        val page = PageText(
+            listOf(
+                PageBlock(organelles.map { it.first }, TextBox(TERM_X, 100, 300, 340)),
+                PageBlock(organelles.map { it.second }, TextBox(ANSWER_X, 100, 800, 340))
+            ),
+            ScriptProfile.Latin
+        )
+
+        assertTrue(cardsFrom(page).none { it.kind == CardKind.TABLE })
+    }
+
+    /** A column of justified prose: every line the full [COLUMN_WIDTH], one under the next. */
+    private fun justifiedColumn(left: Int, vararg lines: String) = placed(
+        *lines.mapIndexed { i, text ->
+            text to TextBox(left, 100 + i * LINE_HEIGHT, left + COLUMN_WIDTH, 100 + (i + 1) * LINE_HEIGHT)
+        }.toTypedArray()
+    )
+
     private companion object {
         /** Nominal height of one line of text in the synthetic page layouts above. */
         const val LINE_HEIGHT = 40
+
+        /** Nominal width of one Latin or Devanagari character, and of one CJK character. */
+        const val CHAR_WIDTH = 12
+        const val CJK_CHAR_WIDTH = 24
+
+        /** Where a synthetic table's columns start, and how far apart its rows are. */
+        const val TERM_X = 100
+        const val ANSWER_X = 400
+        const val ROW_PITCH = 60
+
+        /** The measure of one newspaper column. */
+        const val COLUMN_WIDTH = 400
     }
 }

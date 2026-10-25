@@ -167,6 +167,15 @@ sealed class ScriptProfile(val script: ScriptOption) {
     /** Words never worth blanking out in a cloze. */
     open val stopwords: Set<String> = emptySet()
 
+    /**
+     * Column headings a term table opens with - "Term | Meaning" - lowercased.
+     *
+     * A header row sits in the table's columns exactly like the rows under it, so geometry cannot
+     * tell it apart; only the words can. Without this, a glossary table led with a card whose
+     * front was "Term" and whose answer was "Meaning".
+     */
+    open val tableHeaderWords: Set<String> = LATIN_TABLE_HEADERS
+
     // --- Size limits, all measured in [units] so one set of numbers works for every script. ---
 
     /**
@@ -397,6 +406,11 @@ sealed class ScriptProfile(val script: ScriptOption) {
         override fun listQuestion(subject: String, count: String): String =
             "$count$subject कौन से हैं?"
 
+        /** English as well: Indian textbooks routinely head a Hindi table in English. */
+        override val tableHeaderWords = LATIN_TABLE_HEADERS + setOf(
+            "शब्द", "अर्थ", "परिभाषा", "कार्य", "उदाहरण", "नाम", "विवरण", "पद"
+        )
+
         override val stopwords = setOf(
             "है", "हैं", "था", "थे", "थी", "का", "की", "के", "को", "में", "से", "पर",
             "और", "या", "एक", "यह", "वह", "जो", "कि", "तथा", "एवं", "आदि", "लिए",
@@ -462,6 +476,14 @@ sealed class ScriptProfile(val script: ScriptOption) {
 
         override val connectives = listOf("因为", "由于", "所以", "ため", "ので", "때문에")
 
+        /** One set for all three: a heading word is unambiguous whichever language it is in. */
+        override val tableHeaderWords = LATIN_TABLE_HEADERS + setOf(
+            "术语", "名称", "名词", "含义", "意义", "定义", "解释", "功能", "作用", "例子", "词语",
+            "術語", "名稱", "含義", "意義", "定義", "解釋",
+            "用語", "意味", "説明", "機能",
+            "용어", "뜻", "의미", "정의", "기능", "설명"
+        )
+
         /** CJK packs far more into a character, so a paragraph-length answer is much shorter. */
         override val maxAnswerChars = 120
 
@@ -515,6 +537,14 @@ sealed class ScriptProfile(val script: ScriptOption) {
         const val HEADING_MAX_LENGTH = 60
         const val DEVANAGARI_HEADING_MAX_LENGTH = 32
         const val CJK_HEADING_MAX_LENGTH = 24
+
+        /** English column headings. Shared by every profile, since every recogniser reads Latin. */
+        val LATIN_TABLE_HEADERS = setOf(
+            "term", "terms", "word", "words", "keyword", "keywords", "key term", "key terms",
+            "meaning", "meanings", "definition", "definitions", "description", "explanation",
+            "function", "functions", "role", "example", "examples", "concept", "concepts",
+            "name", "property", "properties", "use", "uses", "symbol"
+        )
         val WHITESPACE = Regex("""\s+""")
 
         fun of(script: ScriptOption): ScriptProfile = when (script) {

@@ -141,11 +141,22 @@ class PageTextReader {
                     // the page from those rather than from list position.
                     val blocks = result.textBlocks
                         .map { block ->
+                            // Text and box are filtered together, so the line boxes stay parallel
+                            // to the lines that survive the blank-line filter.
+                            val kept = block.lines
+                                .map { it.text.trim() to it.boundingBox }
+                                .filter { (text, _) -> text.isNotEmpty() }
+                            val lineBoxes = kept.map { (_, rect) ->
+                                rect?.let { TextBox(it.left, it.top, it.right, it.bottom) }
+                            }
                             PageBlock(
-                                lines = block.lines.map { it.text.trim() }.filter { it.isNotEmpty() },
+                                lines = kept.map { it.first },
                                 box = block.boundingBox?.let {
                                     TextBox(it.left, it.top, it.right, it.bottom)
-                                }
+                                },
+                                // All or nothing: see PageBlock.lineBoxes.
+                                lineBoxes = lineBoxes.takeIf { boxes -> boxes.all { it != null } }
+                                    ?.filterNotNull()
                             )
                         }
                         .filter { it.lines.isNotEmpty() }
@@ -219,6 +230,40 @@ data class PageText(
      * that needs those labels has to work on runs instead.
      */
     fun runs(): List<String> = stitchAcrossBlocks().flatMap { it.runs }
+
+    /** The two-column term/answer tables on the page. See [TableLayout] for what counts as one. */
+    fun tables(): List<PageTable> = TableLayout(this).find()
+
+    /**
+     * This page with [drop] removed, for the passes that run after one has claimed some lines.
+     *
+     * A block that loses some of its lines is shrunk to the boxes of the ones it keeps. Leaving
+     * the old box would make the remainder look as though it still spanned the table it was cut
+     * from, and the stitcher would measure its gaps from the wrong place. A partial removal only
+     * ever happens to a block that has per-line boxes - a line cannot be placed in a table
+     * without one - so the fallback to the old box is defensive rather than expected.
+     */
+    fun withoutLines(drop: Set<LineRef>): PageText {
+        if (drop.isEmpty()) return this
+        val kept = blocks.mapIndexedNotNull { b, block ->
+            val keep = block.lines.indices.filter { LineRef(b, it) !in drop }
+            when (keep.size) {
+                block.lines.size -> block
+                0 -> null
+                else -> {
+                    val boxes = block.lineBoxes
+                        ?.takeIf { it.size == block.lines.size }
+                        ?.let { all -> keep.map { all[it] } }
+                    PageBlock(
+                        lines = keep.map { block.lines[it] },
+                        box = boxes?.reduce(TextBox::union) ?: block.box,
+                        lineBoxes = boxes
+                    )
+                }
+            }
+        }
+        return copy(blocks = kept)
+    }
 
     // --------------------------------------------------------------------------------- stitching
 

@@ -1,5 +1,6 @@
 package com.layerbit.abhyas.data.generate
 
+import com.layerbit.abhyas.data.ocr.PageTable
 import com.layerbit.abhyas.data.ocr.PageText
 import com.layerbit.abhyas.data.ocr.ScriptProfile
 
@@ -9,7 +10,8 @@ import com.layerbit.abhyas.data.ocr.ScriptProfile
  * The passes below run in descending order of how much the page told us. An explicit "Q./A." pair
  * is the page handing over a finished card; a definition is the page stating a fact in a shape we
  * can invert; a cloze is us guessing which word mattered. Everything is scored so the confident
- * suggestions sort to the top of the review screen.
+ * suggestions sort to the top of the review screen. Tables are the exception to working on text:
+ * they are read from where the lines sat, before any text is joined, and see [PageText.tables].
  *
  * Every language-specific rule - where a sentence ends, which verbs define, how to word the
  * question, which word is worth blanking - comes from the page's [ScriptProfile] rather than
@@ -26,8 +28,18 @@ class HeuristicCardGenerator : CardGenerator {
 
     override suspend fun generate(page: PageText): List<CardCandidate> {
         val profile = page.profile
-        val runs = page.runs()
-        if (runs.isEmpty()) return emptyList()
+
+        // Tables before anything else, because they are the one structure that has to be read
+        // from the layout before the text is joined up: stitching and run-joining treat a table
+        // as lines of prose and weld a term to the wrong answer, or to the next term. Their lines
+        // are then taken out of the page altogether, so every later pass sees what is left and a
+        // table row can never come back as a cloze of itself.
+        val tables = page.tables()
+        val tableCards = tables.flatMap { tableCards(it, profile) }
+        val rest = page.withoutLines(tables.flatMapTo(mutableSetOf()) { it.lines })
+
+        val runs = rest.runs()
+        if (runs.isEmpty() && tableCards.isEmpty()) return emptyList()
 
         // Explicit Q&A has to run before sentence splitting, which destroys the very "Q1." and
         // "Ans." labels it keys off - splitting reads the stop in "Q1." as a sentence end and
@@ -48,6 +60,7 @@ class HeuristicCardGenerator : CardGenerator {
             .flatMap { page.sentencesOf(stripListMarker(it)) }
 
         val candidates = buildList {
+            addAll(tableCards)
             addAll(lists.map { it.candidate })
             addAll(qa.candidates)
             addAll(definitions(sentences, profile))
@@ -149,6 +162,36 @@ class HeuristicCardGenerator : CardGenerator {
         val trimmed = label.trimStart()
         return QUESTION_WORDS.any { trimmed.startsWith(it, ignoreCase = true) }
     }
+
+    // ---------------------------------------------------------------------------------- tables
+
+    /**
+     * One card per table row: the term on the front, the right cell on the back.
+     *
+     * The front is the bare term rather than a worded question - see [CardKind.TABLE] for why.
+     * It also means nothing has to be worded per script, so the same card is right in every one.
+     *
+     * The answer floor is lower than the prose passes use. Those need [ScriptProfile.minAnswerChars]
+     * to tell a definition from a stray fragment of a sentence; a table cell has no such
+     * ambiguity, the page drew a box round it, and "Energy" or "1757" is a complete answer. The
+     * ceiling is the usual one, because a cell that long is still more than anyone can grade.
+     */
+    private fun tableCards(table: PageTable, profile: ScriptProfile): List<CardCandidate> =
+        table.rows.mapNotNull { row ->
+            if (row.answer.length !in MIN_TABLE_ANSWER_CHARS..profile.maxAnswerChars) {
+                return@mapNotNull null
+            }
+            CardCandidate(
+                front = row.term,
+                back = row.answer,
+                sourceText = "${row.term} | ${row.answer}",
+                kind = CardKind.TABLE,
+                // Below a list, which is nothing but text the page laid out as one: a table row
+                // is paired by geometry, and a skewed photo can shift it. Above a colon
+                // definition, whose term the text pass had to guess the end of.
+                confidence = 0.88f
+            )
+        }
 
     // ----------------------------------------------------------------------------------- lists
 
@@ -503,6 +546,9 @@ class HeuristicCardGenerator : CardGenerator {
 
     private companion object {
         const val MAX_CARDS_PER_PAGE = 12
+
+        /** A table cell is complete however short; this only refuses a stray mark. */
+        const val MIN_TABLE_ANSWER_CHARS = 2
 
         /** One bullet is a stray dash; two is a list. */
         const val MIN_LIST_ITEMS = 2

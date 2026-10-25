@@ -11,6 +11,18 @@ enum class CardKind(val label: String) {
     /** A heading or lead-in, and the items listed under it. */
     LIST("List"),
 
+    /**
+     * A row of a two-column table: the left cell on the front, the right cell on the back.
+     *
+     * Its own kind rather than [DEFINITION], for two reasons. A table's right column is not
+     * always a definition - it is as often a function, a symbol, a date or a translation - so
+     * these cards put the bare term on the front instead of asking "What is X?", which would be
+     * wrong for "Ribosome | Protein synthesis" and absurd for "Battle of Plassey | 1757". And the
+     * pairing is read from the layout rather than stated by the text, which fails differently: a
+     * crooked photo can shift a row. The chip tells the user which of the two they are checking.
+     */
+    TABLE("Table"),
+
     /** A sentence with one significant value blanked out. */
     CLOZE("Fill in the blank")
 }
