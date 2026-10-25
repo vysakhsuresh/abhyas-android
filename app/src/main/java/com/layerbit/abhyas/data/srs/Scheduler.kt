@@ -114,14 +114,21 @@ object Scheduler {
      *
      * [now] is passed in rather than read from the clock so tests can drive it, and so every card
      * answered in one batch shares a single consistent "now".
+     *
+     * [weights] is the FSRS parameter vector to run: the published defaults, unless the user's own
+     * history has been fitted by [FsrsOptimizer]. A vector failing [Fsrs.isValidWeights] is
+     * ignored in favour of the defaults rather than trusted - it arrives from storage and backups,
+     * and a corrupt one would otherwise mis-schedule every card the user owns, silently.
      */
     fun next(
         current: Scheduling,
         grade: Grade,
         now: Long,
-        retention: Double = DEFAULT_RETENTION
+        retention: Double = DEFAULT_RETENTION,
+        weights: DoubleArray = Fsrs.WEIGHTS
     ): Scheduling {
-        val memory = updateMemory(current, grade, now)
+        val w = if (weights === Fsrs.WEIGHTS || Fsrs.isValidWeights(weights)) weights else Fsrs.WEIGHTS
+        val memory = updateMemory(current, grade, now, w)
 
         return when (current.state) {
             CardState.NEW, CardState.LEARNING -> learningStep(current, memory, grade, now, retention)
@@ -145,23 +152,30 @@ object Scheduler {
      * runs, with retrievability computed from how long it has actually been - which is the whole
      * reason FSRS beats what came before.
      */
-    private fun updateMemory(current: Scheduling, grade: Grade, now: Long): Memory {
+    private fun updateMemory(
+        current: Scheduling,
+        grade: Grade,
+        now: Long,
+        w: DoubleArray
+    ): Memory {
         if (!current.isTracked) {
-            return Memory(Fsrs.initialStability(grade), Fsrs.initialDifficulty(grade))
+            return Memory(Fsrs.initialStability(grade, w), Fsrs.initialDifficulty(grade, w))
         }
 
-        val difficulty = Fsrs.nextDifficulty(current.difficulty, grade)
+        val difficulty = Fsrs.nextDifficulty(current.difficulty, grade, w)
         val elapsed = elapsedDays(current, now)
 
         if (elapsed < 1.0) {
-            return Memory(Fsrs.stabilityAfterSameDay(current.stability, grade), difficulty)
+            return Memory(Fsrs.stabilityAfterSameDay(current.stability, grade, w), difficulty)
         }
 
         val retrievability = Fsrs.retrievability(elapsed, current.stability)
         val stability = if (grade == Grade.AGAIN) {
-            Fsrs.stabilityAfterLapse(current.difficulty, current.stability, retrievability)
+            Fsrs.stabilityAfterLapse(current.difficulty, current.stability, retrievability, w)
         } else {
-            Fsrs.stabilityAfterRecall(current.difficulty, current.stability, retrievability, grade)
+            Fsrs.stabilityAfterRecall(
+                current.difficulty, current.stability, retrievability, grade, w
+            )
         }
         return Memory(stability, difficulty)
     }

@@ -35,9 +35,10 @@ import kotlin.math.pow
  *  3. **Retention is a dial, not a consequence.** [intervalFor] takes the retention you want and
  *     returns the interval that achieves it. Under SM-2 retention is whatever falls out.
  *
- * The weights below are the published FSRS-5 defaults, fitted over millions of real reviews. They
- * are deliberately not tuned here: per-user optimisation needs a review history to fit against,
- * and the defaults are already better than anything hand-chosen.
+ * [WEIGHTS] are the published FSRS-5 defaults, fitted over millions of real reviews, and they are
+ * what every function here uses unless told otherwise. Each function that reads a weight also
+ * takes a trailing `w` so that a vector fitted to one user's own history by [FsrsOptimizer] can be
+ * run through exactly the same arithmetic - one model, two parameter sets, never two models.
  *
  * Pure, with no clock and no database, so every one of these claims is testable.
  */
@@ -55,11 +56,53 @@ object Fsrs {
      * 15,16   the Hard penalty and the Easy bonus
      * 17,18   same-day (short-term) review handling
      * ```
+     *
+     * A `DoubleArray` is mutable whatever `val` says. Nothing may write into this one; a caller
+     * that wants different weights passes its own array.
      */
     val WEIGHTS = doubleArrayOf(
         0.40255, 1.18385, 3.173, 15.69105, 7.1949, 0.5345, 1.4604, 0.0046, 1.54575,
         0.1192, 1.01925, 1.9395, 0.11, 0.29605, 2.2698, 0.2315, 2.9898, 0.51655, 0.6621
     )
+
+    /** How many parameters FSRS-5 has. */
+    const val WEIGHT_COUNT = 19
+
+    /**
+     * The range each weight is allowed to take, index for index with [WEIGHTS].
+     *
+     * Modelled on the clamps the reference optimisers (fsrs-rs, py-fsrs) apply for FSRS-5. They
+     * are not arbitrary: outside them the formulas stop meaning what their comments say - a
+     * negative w8 makes a successful recall *shrink* stability, a w16 below 1 makes Easy schedule
+     * shorter than Good, a w7 near 1 makes difficulty forget every answer. The optimiser keeps
+     * inside them while fitting, and [isValidWeights] uses them to reject a stored vector that has
+     * been corrupted or hand-edited.
+     */
+    val WEIGHT_MIN = doubleArrayOf(
+        0.01, 0.01, 0.01, 0.01, 1.0, 0.001, 0.001, 0.001, 0.0,
+        0.0, 0.001, 0.001, 0.001, 0.001, 0.0, 0.0, 1.0, 0.0, 0.0
+    )
+    val WEIGHT_MAX = doubleArrayOf(
+        100.0, 100.0, 100.0, 100.0, 10.0, 4.0, 4.0, 0.75, 4.5,
+        0.8, 3.5, 5.0, 0.25, 0.9, 4.0, 1.0, 6.0, 2.0, 2.0
+    )
+
+    /**
+     * Whether [w] is a weight vector this model can safely run on: the right length, every value
+     * finite and inside [WEIGHT_MIN]..[WEIGHT_MAX], and the four initial stabilities in order.
+     *
+     * The ordering check is the one that is easy to forget. Each of w0..w3 can be in range and the
+     * vector still be nonsense - "Again" starting a card further out than "Easy" - and that is
+     * exactly what a half-written or bit-flipped stored value would produce.
+     */
+    fun isValidWeights(w: DoubleArray): Boolean {
+        if (w.size != WEIGHT_COUNT) return false
+        for (i in 0 until WEIGHT_COUNT) {
+            val v = w[i]
+            if (!v.isFinite() || v < WEIGHT_MIN[i] || v > WEIGHT_MAX[i]) return false
+        }
+        return w[0] <= w[1] && w[1] <= w[2] && w[2] <= w[3]
+    }
 
     /**
      * The forgetting curve's exponent. Memory decays as a power function rather than the
@@ -100,12 +143,12 @@ object Fsrs {
     }
 
     /** Stability of a card being answered for the very first time. */
-    fun initialStability(grade: Grade): Double =
-        max(MIN_STABILITY, WEIGHTS[grade.fsrsRating - 1])
+    fun initialStability(grade: Grade, w: DoubleArray = WEIGHTS): Double =
+        max(MIN_STABILITY, w[grade.fsrsRating - 1])
 
     /** Difficulty of a card being answered for the very first time. */
-    fun initialDifficulty(grade: Grade): Double =
-        clampDifficulty(WEIGHTS[4] - exp(WEIGHTS[5] * (grade.fsrsRating - 1)) + 1.0)
+    fun initialDifficulty(grade: Grade, w: DoubleArray = WEIGHTS): Double =
+        clampDifficulty(w[4] - exp(w[5] * (grade.fsrsRating - 1)) + 1.0)
 
     /**
      * Difficulty after an answer.
@@ -114,10 +157,10 @@ object Fsrs {
      * is already hard cannot run away; then it is pulled back towards the difficulty of an
      * easily-learned card, which stops a single bad day permanently marking a card as impossible.
      */
-    fun nextDifficulty(difficulty: Double, grade: Grade): Double {
-        val delta = -WEIGHTS[6] * (grade.fsrsRating - 3)
+    fun nextDifficulty(difficulty: Double, grade: Grade, w: DoubleArray = WEIGHTS): Double {
+        val delta = -w[6] * (grade.fsrsRating - 3)
         val damped = difficulty + delta * (10.0 - difficulty) / 9.0
-        val reverted = WEIGHTS[7] * initialDifficulty(Grade.EASY) + (1.0 - WEIGHTS[7]) * damped
+        val reverted = w[7] * initialDifficulty(Grade.EASY, w) + (1.0 - w[7]) * damped
         return clampDifficulty(reverted)
     }
 
@@ -133,15 +176,16 @@ object Fsrs {
         difficulty: Double,
         stability: Double,
         retrievability: Double,
-        grade: Grade
+        grade: Grade,
+        w: DoubleArray = WEIGHTS
     ): Double {
-        val hardPenalty = if (grade == Grade.HARD) WEIGHTS[15] else 1.0
-        val easyBonus = if (grade == Grade.EASY) WEIGHTS[16] else 1.0
+        val hardPenalty = if (grade == Grade.HARD) w[15] else 1.0
+        val easyBonus = if (grade == Grade.EASY) w[16] else 1.0
 
-        val growth = exp(WEIGHTS[8]) *
+        val growth = exp(w[8]) *
             (11.0 - difficulty) *
-            stability.pow(-WEIGHTS[9]) *
-            (exp(WEIGHTS[10] * (1.0 - retrievability)) - 1.0) *
+            stability.pow(-w[9]) *
+            (exp(w[10] * (1.0 - retrievability)) - 1.0) *
             hardPenalty *
             easyBonus
 
@@ -158,14 +202,15 @@ object Fsrs {
     fun stabilityAfterLapse(
         difficulty: Double,
         stability: Double,
-        retrievability: Double
+        retrievability: Double,
+        w: DoubleArray = WEIGHTS
     ): Double {
-        val lapsed = WEIGHTS[11] *
-            difficulty.pow(-WEIGHTS[12]) *
-            ((stability + 1.0).pow(WEIGHTS[13]) - 1.0) *
-            exp(WEIGHTS[14] * (1.0 - retrievability))
+        val lapsed = w[11] *
+            difficulty.pow(-w[12]) *
+            ((stability + 1.0).pow(w[13]) - 1.0) *
+            exp(w[14] * (1.0 - retrievability))
 
-        val ceiling = stability / exp(WEIGHTS[17] * WEIGHTS[18])
+        val ceiling = stability / exp(w[17] * w[18])
         return max(MIN_STABILITY, min(lapsed, ceiling))
     }
 
@@ -176,8 +221,8 @@ object Fsrs {
      * move stability only slightly rather than running the full recall formula - which would
      * treat a one-minute gap as a triumph of retention and schedule the card months out.
      */
-    fun stabilityAfterSameDay(stability: Double, grade: Grade): Double =
-        max(MIN_STABILITY, stability * exp(WEIGHTS[17] * (grade.fsrsRating - 3 + WEIGHTS[18])))
+    fun stabilityAfterSameDay(stability: Double, grade: Grade, w: DoubleArray = WEIGHTS): Double =
+        max(MIN_STABILITY, stability * exp(w[17] * (grade.fsrsRating - 3 + w[18])))
 
     /**
      * Convert an SM-2 card to FSRS state, for collections built before the change.
